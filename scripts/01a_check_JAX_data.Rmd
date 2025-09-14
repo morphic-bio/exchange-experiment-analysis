@@ -37,7 +37,7 @@ library(readxl)
 
 theme_set(theme_classic())
 
-path = "../../MorPhiC/data/MorPhiC_exchange_experiment"
+path = "../../../MorPhiC/data/MorPhiC_exchange_experiment"
 dat_path = file.path(path, "DRACC-processed/JAX_exchange_experiment_DRACC_processed_August2025/Tables")
 
 metadata_path = file.path(path, "JAX/morphic_exchange_experiment")
