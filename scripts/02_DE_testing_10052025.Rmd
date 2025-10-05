@@ -1,0 +1,709 @@
+---
+title: "02_DE_testing"
+output: html_document
+date: "2025-09-25"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Loading packages
+
+```{r load_libraries, warning = FALSE, message = FALSE}
+library(ggplot2)
+library(ggrepel)
+library(ggpubr)
+library(stringr)
+library(MASS)
+library(RColorBrewer)
+library(DESeq2)
+library(viridis)
+library(ggpointdensity)
+library(tidyverse)
+library(data.table)
+library(pheatmap)
+library(ComplexHeatmap)
+library(UpSetR)
+library(readxl)
+library(ggsci)
+library(ggpointdensity)
+library(ggprism)
+library(ragg)
+theme_set(theme_classic(base_size = 15))
+
+personal_path = "/fh/working/sun_w/sshen/MorPhiC"
+path = "/fh/fast/sun_w/MorPhiC/data/MorPhiC_exchange_experiment/"
+dat_path = file.path(path, "DRACC-processed/JAX_exchange_experiment_DRACC_processed_August2025/Tables")
+```
+
+## Read in meta data
+
+```{r fig.width = 3, fig.height=3}
+meta = fread(file.path(personal_path, "JAX_meta_data.tsv"), data.table = FALSE)
+dim(meta)
+meta[1:2, ]
+names(meta)
+names(meta)[apply(meta, 2, \(x) any(is.na(x)))]
+
+table(meta$clonal.label)
+table(table(meta$clonal.label))
+table(table(meta$label))
+
+meta$timepoint = as.factor(meta$timepoint_value)
+meta$model_condition = stringr::str_sub(meta$model_system, start = 1, end = -2)
+
+```
+
+## Read in gene count data
+
+```{r}
+cts = fread(file.path(dat_path, "genesCounts.csv"), data.table = FALSE)
+dim(cts)
+cts[1:2, c(1:2, (ncol(cts) - 1) : ncol(cts))]
+# Align counts with meta data
+stopifnot(
+  setequal(meta$file_id, names(cts)[-1]),
+  !any(duplicated(meta$file_id)),
+  !any(duplicated(names(cts)[-1]))
+)
+meta = meta[match(names(cts)[-1], meta$file_id), ]
+# To matrix
+cts_dat = data.matrix(cts[, -1])
+rownames(cts_dat) = cts$Name
+```
+
+### Exclude genes without annotation
+
+```{r}
+# Read in gene annotation
+gene_anno = fread("/fh/fast/sun_w/sshen/MorPhiC/gencode_v44_primary_assembly_info.tsv")
+dim(gene_anno)
+cts = cts[cts$Name %in% gene_anno$ensembl_gene_id, ]
+cts_dat = cts_dat[rownames(cts_dat) %in% gene_anno$ensembl_gene_id, ]
+```
+
+### Discard genes whose expression is 0 in more than 75% of samples
+
+```{r}
+gene_info = data.frame(
+  apply(cts_dat, 1, min), 
+  apply(cts_dat, 1, median), 
+  apply(cts_dat, 1, \(x) quantile(x, probs = 0.75)), 
+  apply(cts_dat, 1, max)
+)
+gene_info[1:2, ]
+names(gene_info) = c("min", "median", "q75", "max")
+summary(gene_info)
+table(gene_info$q75 > 0)
+
+# Subset genes
+w2kp = which(gene_info$q75 > 0)
+cts_dat = cts_dat[w2kp, ]
+gene_info = gene_info[w2kp, ]
+```
+
+### Check read depth vs. gene expression quantile
+
+```{r, fig.width = 4, fig.height=3}
+meta$read_depth = colSums(cts_dat)/1e6
+meta$q75 = apply(cts_dat, 2, quantile, probs = 0.75)
+my_colors <- c("#E41A1C", "#377EB8", "#4DAF4A", "#984EA3", "#FF7F00", 
+               "#FFFF33", "#A65628", "#F781BF", "#999999", "#66C2A5", "#301934")
+names(my_colors) = unique(meta$ko_strategy)
+meta$run_id_short = meta$run_id
+```
+
+### PCA for all samples
+
+```{r}
+# PCA of all samples
+q75 = apply(cts_dat, 1, quantile, probs=0.75)
+cts_dat_n = t(cts_dat[q75 > 0,])
+cts_dat_n = log(median(meta$q75)*cts_dat_n/meta$q75 + 1)
+dim(cts_dat_n)
+
+sample_pca = prcomp(cts_dat_n, center = TRUE, scale. = TRUE)
+names(sample_pca)
+pc_scores = sample_pca$x
+eigen_vals = sample_pca$sdev^2
+eigen_vals[1:5]/sum(eigen_vals)
+pvs = round(eigen_vals[1:5]/sum(eigen_vals)*100,1)
+pvs
+
+PC_df = data.frame(pc_scores)
+PC_df = cbind(PC_df, meta)
+
+gPC = ggplot(PC_df, aes(x = PC1, y = PC2, shape=ko_gene, color=ko_strategy)) +
+  geom_point(size=2.5, alpha=0.7) + 
+  scale_color_manual(values = my_colors) +
+  scale_shape_prism() + 
+  labs(color="KO type", shape ="KO gene") + 
+  xlab(sprintf("PC1 (%.1f%% variance)", pvs[1])) + 
+  ylab(sprintf("PC2 (%.1f%% variance)", pvs[2])) + 
+  ggtitle("All samples") + 
+  guides(
+    color = guide_legend(title = NULL, order = 1),
+    shape = guide_legend(title = NULL, order = 2)
+  ) +
+  theme(
+    legend.margin = margin(0, 0, 0, 0), 
+    legend.box.just = "left", 
+    legend.direction = "vertical" 
+  )
+
+print(gPC)
+
+width_px  = 1920
+height_px = round(width_px * (3/4)) 
+
+ggsave(
+  filename = file.path(personal_path, paste0("/publication/", "PCPlot_all_samples.png",sep='')),
+  plot     = gPC,
+  device   = ragg::agg_png,     # AGG backend, full alpha support
+  bg       = "transparent",
+  width    = width_px,
+  height   = height_px,
+  units    = "px",        
+  dpi      = 300,
+)
+```
+
+### PCA for samples we are using
+
+```{r}
+model1 = c("UCSF_Pool1_DMSO_Rep", "UCSF_Pool2_DMSO_Rep", "UCSF_Pool1_DOX_Rep", "UCSF_Pool2_DOX_Rep",
+           "NW_C20_DMSO_Rep", "NW_C43_DMSO_Rep", "NW_C20_IAA_Rep", "NW_C43_IAA_Rep",
+           "JAX_C01_Rep", "JAX_E04_Rep", "MSK_Clone1_Rep", "MSK_Clone2_Rep", "JAX_MSK_WT")
+sample2kp = which(meta$model_condition %in% model1)
+
+cts_dat_m = cts_dat[,sample2kp]
+meta_m    = meta[sample2kp,]
+
+q75 = apply(cts_dat_m, 1, quantile, probs=0.75)
+cts_dat_m_UCSF_NW = t(cts_dat_m[q75 > 0,])
+cts_dat_m_UCSF_NW = log(median(meta_m$q75)*cts_dat_m_UCSF_NW/meta_m$q75 + 1)
+dim(cts_dat_m_UCSF_NW)
+meta_m$clone = stringr::str_split_fixed(meta_m$model_condition, "_", 4)[, 2]
+meta_m$clone[meta_m$clone == "MSK"] = "WT"
+
+sample_pca = prcomp(cts_dat_m_UCSF_NW, center = TRUE, scale. = TRUE)
+names(sample_pca)
+pc_scores = sample_pca$x
+eigen_vals = sample_pca$sdev^2
+eigen_vals[1:5]/sum(eigen_vals)
+pvs = round(eigen_vals[1:5]/sum(eigen_vals)*100,1)
+pvs
+
+PC_df = data.frame(pc_scores)
+PC_df = cbind(PC_df, meta_m)
+
+gPC = ggplot(PC_df, aes(x = PC1, y = PC2, shape=ko_gene, color=ko_strategy)) +
+  geom_point(size=2.5, alpha=0.7) + scale_color_manual(values = my_colors) +
+  scale_shape_prism() + 
+  labs(color="KO type", shape ="KO gene") + 
+  xlab(sprintf("PC1 (%.1f%% variance)", pvs[1])) + 
+  ylab(sprintf("PC2 (%.1f%% variance)", pvs[2])) + 
+  ggtitle("Selected samples") + 
+  guides(
+    color = guide_legend(title = NULL, order = 1),
+    shape = guide_legend(title = NULL, order = 2)
+  ) +
+  theme(
+    legend.margin = margin(0, 0, 0, 0), 
+    legend.box.just = "left", 
+    legend.direction = "vertical" 
+  )
+
+print(gPC)
+
+width_px  = 1920
+height_px = round(width_px * (3/4)) 
+
+ggsave(
+  filename = file.path(personal_path, paste0("/publication/", "PCPlot_selected_samples.png",sep='')),
+  plot     = gPC,
+  device   = ragg::agg_png,     # AGG backend, full alpha support
+  bg       = "transparent",
+  width    = width_px,
+  height   = height_px,
+  units    = "px",       
+  dpi      = 300,
+)
+```
+
+### DE analysis for UCSF and NW
+
+```{r fig.height=3.2, fig.width=4.8, message=FALSE, warning=FALSE}
+meta$model_condition = stringr::str_sub(meta$model_system, start = 1, end = -2)
+
+df_size = NULL
+model1 = c("UCSF_Pool1_DMSO_Rep", "UCSF_Pool2_DMSO_Rep", "UCSF_Pool1_DOX_Rep", "UCSF_Pool2_DOX_Rep",
+           "NW_C20_DMSO_Rep", "NW_C43_DMSO_Rep", "NW_C20_IAA_Rep", "NW_C43_IAA_Rep")
+sample2kp = which(meta$model_condition %in% model1)
+
+cts_dat_m = cts_dat[,sample2kp]
+meta_m    = meta[sample2kp,]
+
+table(meta_m$ko_strategy)
+stopifnot(all(meta_m$file_id == colnames(cts_dat_m)))
+  
+## Generate sample information matrix
+cols2kp = c("model_condition", "ko_strategy", "ko_gene", 
+            "run_id", "run_id_short", "timepoint", "q75")
+sample_info = meta_m[,cols2kp]
+colnames(sample_info)[which(colnames(sample_info)=="timepoint")] = "day"
+
+dim(sample_info)
+sample_info[1:2,]
+  
+# do two steps of filtering
+# first, filter based on q75 of each gene
+# second, filter based on whether each gene is expressed in at least 75% of the samples
+
+dg_q75 = apply(cts_dat_m, 1, quantile, probs=0.75)
+cts_dat_m = cts_dat_m[dg_q75 > 0, ]
+
+print(sprintf("After filtering by gene expression q75, the number of genes reduces from %d to %d", 
+              length(dg_q75), nrow(cts_dat_m)))
+
+# update the q75 based on only genes that will be used in the DE analysis
+sample_info$q75 = apply(cts_dat_m, 2, quantile, probs = 0.75)
+sample_info$log_q75 = log(sample_info$q75)
+
+model1 = c("UCSF_Pool1_DMSO_Rep", "UCSF_Pool2_DMSO_Rep", "UCSF_Pool1_DOX_Rep", "UCSF_Pool2_DOX_Rep")
+sample2kp = which(meta_m$model_condition %in% model1)
+cts_dat_m_UCSF = cts_dat_m[,sample2kp]
+sample_info_UCSF = sample_info[sample2kp,]
+sample_info_UCSF$clone = stringr::str_split_fixed(sample_info_UCSF$model_condition, "_", 4)[, 2]
+
+library(edgeR)
+library(limma)
+
+# ---- inputs ----
+counts  <- cts_dat_m_UCSF
+colData <- sample_info_UCSF
+rownames(colData) = colnames(counts)
+stopifnot(all(colnames(counts) == rownames(colData)))
+
+# ---- group factor: WT vs KO ----
+group <- ifelse(colData$ko_gene == "WT",
+                "WT", "KO")
+group <- factor(group, levels = c("WT","KO"))
+
+design2 <- model.matrix(~ 0 + group)
+colnames(design2) <- c("WT","KO")
+
+# ---- block vector: KO keep clone IDs; WT each unique ----
+block <- as.character(colData$clone)
+block = paste(block, group, sep = "_")
+
+# ---- normalization + voom (quality weights optional) ----
+y2 <- DGEList(counts)
+y2 <- calcNormFactors(y2)
+v2 <- voom(y2, design2, plot = FALSE)
+
+# ---- estimate correlation & fit ----
+corfit2 <- duplicateCorrelation(v2, design2, block = block)
+message(sprintf("Estimated intra-clone correlation: %.3f", corfit2$consensus))
+
+fitUCSF <- lmFit(v2, design2, block = block, correlation = corfit2$consensus)
+
+# ---- KO vs WT contrast ----
+L2 <- makeContrasts(KOvsWT = KO - WT, levels = design2)
+fitUCSF <- eBayes(contrasts.fit(fitUCSF, L2))
+ttUCSF   <- topTable(fitUCSF, coef = "KOvsWT", number = Inf)
+
+
+model1 = c("NW_C20_DMSO_Rep", "NW_C43_DMSO_Rep", "NW_C20_IAA_Rep", "NW_C43_IAA_Rep")
+sample2kp = which(meta_m$model_condition %in% model1)
+cts_dat_m_NW = cts_dat_m[,sample2kp]
+sample_info_NW = sample_info[sample2kp,]
+sample_info_NW$clone = stringr::str_split_fixed(sample_info_NW$model_condition, "_", 4)[, 2]
+
+
+# ---- inputs ----
+counts  <- cts_dat_m_NW
+colData <- sample_info_NW
+rownames(colData) = colnames(counts)
+stopifnot(all(colnames(counts) == rownames(colData)))
+
+# ---- group factor: WT vs KO ----
+group <- ifelse(colData$ko_gene == "WT",
+                "WT", "KO")
+group <- factor(group, levels = c("WT","KO"))
+
+design2 <- model.matrix(~ 0 + group)
+colnames(design2) <- c("WT","KO")
+
+# ---- block vector: KO keep clone IDs; WT each unique ----
+block <- as.character(colData$clone)
+block = paste(block, group, sep = "_")
+
+# ---- normalization + voom (quality weights optional) ----
+y2 <- DGEList(counts)
+y2 <- calcNormFactors(y2)
+v2 <- voom(y2, design2, plot = FALSE)
+
+# ---- estimate correlation & fit ----
+corfit2 <- duplicateCorrelation(v2, design2, block = block)
+message(sprintf("Estimated intra-clone correlation: %.3f", corfit2$consensus))
+
+fitNW <- lmFit(v2, design2, block = block, correlation = corfit2$consensus)
+
+# ---- KO vs WT contrast ----
+L2 <- makeContrasts(KOvsWT = KO - WT, levels = design2)
+fitNW <- eBayes(contrasts.fit(fitNW, L2))
+ttNW   <- topTable(fitNW, coef = "KOvsWT", number = Inf)
+
+```
+
+### DE analysis for JAX and MSK
+
+```{r fig.height=3.2, fig.width=4.8, message=FALSE, warning=FALSE}
+meta$model_condition = stringr::str_sub(meta$model_system, start = 1, end = -2)
+
+df_size = NULL
+model1 = c("JAX_C01_Rep", "JAX_E04_Rep", "MSK_Clone1_Rep", "MSK_Clone2_Rep", "JAX_MSK_WT")
+sample2kp = which(meta$model_condition %in% model1)
+
+cts_dat_m = cts_dat[,sample2kp]
+meta_m    = meta[sample2kp,]
+
+table(meta_m$ko_strategy)
+stopifnot(all(meta_m$file_id == colnames(cts_dat_m)))
+  
+## Generate sample information matrix
+cols2kp = c("model_condition", "ko_strategy", "ko_gene", 
+            "run_id", "run_id_short", "timepoint", "q75")
+sample_info = meta_m[,cols2kp]
+colnames(sample_info)[which(colnames(sample_info)=="timepoint")] = "day"
+
+dim(sample_info)
+sample_info[1:2,]
+  
+# do two steps of filtering
+# first, filter based on q75 of each gene
+# second, filter based on whether each gene is expressed in at least 75% of the samples
+
+dg_q75 = apply(cts_dat_m, 1, quantile, probs=0.75)
+cts_dat_m = cts_dat_m[dg_q75 > 0, ]
+
+print(sprintf("After filtering by gene expression q75, the number of genes reduces from %d to %d", 
+              length(dg_q75), nrow(cts_dat_m)))
+
+# update the q75 based on only genes that will be used in the DE analysis
+sample_info$q75 = apply(cts_dat_m, 2, quantile, probs = 0.75)
+sample_info$log_q75 = log(sample_info$q75)
+
+model1 = c("JAX_C01_Rep", "JAX_E04_Rep", "JAX_MSK_WT")
+sample2kp = which(meta_m$model_condition %in% model1)
+cts_dat_m_JAX_WT = cts_dat_m[,sample2kp]
+sample_info_JAX_WT = sample_info[sample2kp,]
+sample_info_JAX_WT$clone = stringr::str_split_fixed(sample_info_JAX_WT$model_condition, "_", 4)[, 2]
+
+library(edgeR)
+library(limma)
+
+# ---- inputs ----
+counts  <- cts_dat_m_JAX_WT
+colData <- sample_info_JAX_WT
+rownames(colData) = colnames(counts)
+stopifnot(all(colnames(counts) == rownames(colData)))
+
+# ---- group factor: WT vs KO ----
+group <- ifelse(colData$ko_strategy == "CTRL_KO_WT" | colData$ko_gene == "WT" | colData$model_condition == "JAX_MSK_WT",
+                "WT", "KO")
+group <- factor(group, levels = c("WT","KO"))
+
+design2 <- model.matrix(~ 0 + group)
+colnames(design2) <- c("WT","KO")
+
+# ---- block vector: KO keep clone IDs; WT each unique ----
+isWT  <- group == "WT"
+block <- as.character(colData$clone)
+block[isWT] <- paste0("WT_", seq_len(sum(isWT)))
+
+# ---- normalization + voom (quality weights optional) ----
+y2 <- DGEList(counts)
+y2 <- calcNormFactors(y2)
+v2 <- voom(y2, design2, plot = FALSE)
+
+# ---- estimate correlation & fit ----
+corfit2 <- duplicateCorrelation(v2, design2, block = block)
+message(sprintf("Estimated intra-clone correlation: %.3f", corfit2$consensus))
+
+fitJAX <- lmFit(v2, design2, block = block, correlation = corfit2$consensus)
+
+# ---- KO vs WT contrast ----
+L2 <- makeContrasts(KOvsWT = KO - WT, levels = design2)
+fitJAX <- eBayes(contrasts.fit(fitJAX, L2))
+ttJAX   <- topTable(fitJAX, coef = "KOvsWT", number = Inf)
+
+
+
+
+model1 = c("MSK_Clone1_Rep", "MSK_Clone2_Rep", "JAX_MSK_WT")
+sample2kp = which(meta_m$model_condition %in% model1)
+cts_dat_m_MSK_WT = cts_dat_m[,sample2kp]
+sample_info_MSK_WT = sample_info[sample2kp,]
+sample_info_MSK_WT$clone = stringr::str_split_fixed(sample_info_MSK_WT$model_condition, "_", 4)[, 2]
+
+
+# ---- inputs ----
+counts  <- cts_dat_m_MSK_WT
+colData <- sample_info_MSK_WT
+rownames(colData) = colnames(counts)
+stopifnot(all(colnames(counts) == rownames(colData)))
+
+# ---- group factor: WT vs KO ----
+group <- ifelse(colData$ko_strategy == "CTRL_KO_WT" | colData$ko_gene == "WT" | colData$model_condition == "JAX_MSK_WT",
+                "WT", "KO")
+group <- factor(group, levels = c("WT","KO"))
+
+design2 <- model.matrix(~ 0 + group)
+colnames(design2) <- c("WT","KO")
+
+# ---- block vector: KO keep clone IDs; WT each unique ----
+isWT  <- group == "WT"
+block <- as.character(colData$clone)
+block[isWT] <- paste0("WT_", seq_len(sum(isWT)))
+
+# ---- normalization + voom (quality weights optional) ----
+y2 <- DGEList(counts)
+y2 <- calcNormFactors(y2)
+v2 <- voom(y2, design2, plot = FALSE)
+
+# ---- estimate correlation & fit ----
+corfit2 <- duplicateCorrelation(v2, design2, block = block)
+message(sprintf("Estimated intra-clone correlation: %.3f", corfit2$consensus))
+
+fitMSK <- lmFit(v2, design2, block = block, correlation = corfit2$consensus)
+
+# ---- KO vs WT contrast ----
+L2 <- makeContrasts(KOvsWT = KO - WT, levels = design2)
+fitMSK <- eBayes(contrasts.fit(fitMSK, L2))
+ttMSK   <- topTable(fitMSK, coef = "KOvsWT", number = Inf)
+
+```
+
+### Volcano plot visualization
+
+```{r}
+# Add a significance column for coloring
+ttUCSF$threshold <- ttUCSF$adj.P.Val < 0.05 & abs(ttUCSF$logFC) > 1
+
+p1 = ggplot(ttUCSF, aes(x = logFC, y = -log10(adj.P.Val))) +
+  geom_point(aes(color = threshold), alpha = 0.6, size = 1.5) +
+  scale_color_manual(values = c("FALSE" = "grey70", "TRUE" = "red")) +
+  theme_minimal(base_size = 14) +
+  labs(title = "Volcano Plot: KO DOX vs DMSO for UCSF",
+       x = "log2 Fold Change",
+       y = "-log10(adjusted p-value)") +
+  geom_vline(xintercept = c(-1, 1), linetype = "dashed", color = "black") +
+  geom_hline(yintercept = -log10(0.05), linetype = "dashed", color = "black")
+
+# Add a significance column for coloring
+ttNW$threshold <- ttNW$adj.P.Val < 0.05 & abs(ttNW$logFC) > 1
+
+p2 = ggplot(ttNW, aes(x = logFC, y = -log10(adj.P.Val))) +
+  geom_point(aes(color = threshold), alpha = 0.6, size = 1.5) +
+  scale_color_manual(values = c("FALSE" = "grey70", "TRUE" = "red")) +
+  theme_minimal(base_size = 14) +
+  labs(title = "Volcano Plot: KO IAA vs DMSO for NW",
+       x = "log2 Fold Change",
+       y = "-log10(adjusted p-value)") +
+  geom_vline(xintercept = c(-1, 1), linetype = "dashed", color = "black") +
+  geom_hline(yintercept = -log10(0.05), linetype = "dashed", color = "black")
+
+width_px  = 1920
+height_px = round(width_px * (3/4)) 
+
+ggsave(
+  filename = file.path(personal_path, paste0("/publication/", "VolcanoPlot_UCSF.png",sep='')),
+  plot     = p1,
+  device   = ragg::agg_png,     # AGG backend, full alpha support
+  bg       = "transparent",
+  width    = width_px,
+  height   = height_px,
+  units    = "px",       
+  dpi      = 300,
+)
+ggsave(
+  filename = file.path(personal_path, paste0("/publication/", "VolcanoPlot_NW.png",sep='')),
+  plot     = p2,
+  device   = ragg::agg_png,     # AGG backend, full alpha support
+  bg       = "transparent",
+  width    = width_px,
+  height   = height_px,
+  units    = "px",       
+  dpi      = 300,
+)
+
+# Add a significance column for coloring
+ttJAX$threshold <- ttJAX$adj.P.Val < 0.05 & abs(ttJAX$logFC) > 1
+
+p3 = ggplot(ttJAX, aes(x = logFC, y = -log10(adj.P.Val))) +
+  geom_point(aes(color = threshold), alpha = 0.6, size = 1.5) +
+  scale_color_manual(values = c("FALSE" = "grey70", "TRUE" = "red")) +
+  theme_minimal(base_size = 14) +
+  labs(title = "Volcano Plot: KO JAX vs WT",
+       x = "log2 Fold Change",
+       y = "-log10(adjusted p-value)") +
+  geom_vline(xintercept = c(-1, 1), linetype = "dashed", color = "black") +
+  geom_hline(yintercept = -log10(0.05), linetype = "dashed", color = "black")
+
+# Add a significance column for coloring
+ttMSK$threshold <- ttMSK$adj.P.Val < 0.05 & abs(ttMSK$logFC) > 1
+
+p4 = ggplot(ttMSK, aes(x = logFC, y = -log10(adj.P.Val))) +
+  geom_point(aes(color = threshold), alpha = 0.6, size = 1.5) +
+  scale_color_manual(values = c("FALSE" = "grey70", "TRUE" = "red")) +
+  theme_minimal(base_size = 14) +
+  labs(title = "Volcano Plot: KO MSK vs WT",
+       x = "log2 Fold Change",
+       y = "-log10(adjusted p-value)") +
+  geom_vline(xintercept = c(-1, 1), linetype = "dashed", color = "black") +
+  geom_hline(yintercept = -log10(0.05), linetype = "dashed", color = "black")
+
+width_px  = 1920
+height_px = round(width_px * (3/4)) 
+
+ggsave(
+  filename = file.path(personal_path, paste0("/publication/", "VolcanoPlot_JAX.png",sep='')),
+  plot     = p3,
+  device   = ragg::agg_png,     # AGG backend, full alpha support
+  bg       = "transparent",
+  width    = width_px,
+  height   = height_px,
+  units    = "px",       
+  dpi      = 300,
+)
+ggsave(
+  filename = file.path(personal_path, paste0("/publication/", "VolcanoPlot_MSK.png",sep='')),
+  plot     = p4,
+  device   = ragg::agg_png,     # AGG backend, full alpha support
+  bg       = "transparent",
+  width    = width_px,
+  height   = height_px,
+  units    = "px",       
+  dpi      = 300,
+)
+```
+
+### Limma outputs
+
+```{r}
+gene_anno$hgnc_symbol[gene_anno$hgnc_symbol == ""] = gene_anno$ensembl_gene_id[gene_anno$hgnc_symbol == ""]
+gene_anno[gene_anno$hgnc_symbol == "LINC01238", ]$hgnc_symbol = paste0("LINC01238_", c(1, 2))
+rownames(ttJAX) = gene_anno[match(rownames(ttJAX), gene_anno$ensembl_gene_id), ]$hgnc_symbol
+rownames(ttMSK) = gene_anno[match(rownames(ttMSK), gene_anno$ensembl_gene_id), ]$hgnc_symbol
+rownames(ttUCSF) = gene_anno[match(rownames(ttUCSF), gene_anno$ensembl_gene_id), ]$hgnc_symbol
+rownames(ttNW) = gene_anno[match(rownames(ttNW), gene_anno$ensembl_gene_id), ]$hgnc_symbol
+write.table(ttJAX[, 1:6], file = file.path(personal_path, paste0("/publication/", "DE_JAX.csv", sep='')), 
+            sep = "\t", quote = FALSE)
+write.table(ttMSK[, 1:6], file = file.path(personal_path, paste0("/publication/", "DE_MSK.csv", sep='')), 
+            sep = "\t", quote = FALSE)
+write.table(ttUCSF[, 1:6], file = file.path(personal_path, paste0("/publication/", "DE_UCSF.csv", sep='')), 
+            sep = "\t", quote = FALSE)
+write.table(ttNW[, 1:6], file = file.path(personal_path, paste0("/publication/", "DE_NW.csv", sep='')), 
+            sep = "\t", quote = FALSE)
+```
+
+### Proportion matrix generation
+
+```{r}
+ttJAX = as.data.frame(data.table::fread(file.path(personal_path, paste0("/publication/", "DE_JAX.csv", sep=''))))
+rownames(ttJAX) = ttJAX$V1
+ttMSK = as.data.frame(data.table::fread(file.path(personal_path, paste0("/publication/", "DE_MSK.csv", sep=''))))
+rownames(ttMSK) = ttMSK$V1
+ttUCSF = as.data.frame(data.table::fread(file.path(personal_path, paste0("/publication/", "DE_UCSF.csv", sep=''))))
+rownames(ttUCSF) = ttUCSF$V1
+ttNW = as.data.frame(data.table::fread(file.path(personal_path, paste0("/publication/", "DE_NW.csv", sep=''))))
+rownames(ttNW) = ttNW$V1
+
+jax = rownames(ttJAX[abs(ttJAX$logFC) > 1 & ttJAX$adj.P.Val < 0.05, ])
+msk = rownames(ttMSK[abs(ttMSK$logFC) > 1 & ttMSK$adj.P.Val < 0.05, ])
+ucsf = rownames(ttUCSF[abs(ttUCSF$logFC) > 1 & ttUCSF$adj.P.Val < 0.05, ])
+nw = rownames(ttNW[abs(ttNW$logFC) > 1 & ttNW$adj.P.Val < 0.05, ])
+
+prop_mat = matrix(1, nrow = 4, ncol = 4)
+prop_mat[1, 2] = sum(msk %in% jax) / length(msk)
+prop_mat[1, 3] = sum(ucsf %in% jax) / length(ucsf)
+prop_mat[1, 4] = sum(nw %in% jax) / length(nw)
+prop_mat[2, 1] = sum(jax %in% msk) / length(jax)
+prop_mat[2, 3] = sum(ucsf %in% msk) / length(ucsf)
+prop_mat[2, 4] = sum(nw %in% msk) / length(nw)
+prop_mat[3, 1] = sum(jax %in% ucsf) / length(jax)
+prop_mat[3, 2] = sum(msk %in% ucsf) / length(msk)
+prop_mat[3, 4] = sum(nw %in% ucsf) / length(nw)
+prop_mat[4, 1] = sum(jax %in% nw) / length(jax)
+prop_mat[4, 2] = sum(msk %in% nw) / length(msk)
+prop_mat[4, 3] = sum(ucsf %in% nw) / length(ucsf)
+
+rownames(prop_mat) = c("JAX", "MSK", "UCSF", "NW")
+colnames(prop_mat) = c("JAX", "MSK", "UCSF", "NW")
+```
+
+```{r}
+# Define DE sets from each cohort (keep your current thresholds for defining the source gene set)
+jax  <- rownames(ttJAX [abs(ttJAX$logFC)  > 1 & ttJAX$adj.P.Val  < 0.05, ])
+msk  <- rownames(ttMSK [abs(ttMSK$logFC)  > 1 & ttMSK$adj.P.Val  < 0.05, ])
+ucsf <- rownames(ttUCSF[abs(ttUCSF$logFC) > 1 & ttUCSF$adj.P.Val < 0.05, ])
+nw   <- rownames(ttNW  [abs(ttNW$logFC)   > 1 & ttNW$adj.P.Val   < 0.05, ])
+
+# 1 - 2 * prop(p > 0.5) using NOMINAL p-values in the target table
+score_p_uniform <- function(src_genes, tt_target) {
+  idx <- intersect(src_genes, rownames(tt_target))
+  if (length(idx) == 0) return(NA_real_)
+  p <- tt_target[idx, "P.Value"]           # <- nominal p-values
+  p <- p[is.finite(p)]
+  if (length(p) == 0) return(NA_real_)
+  1 - 2 * mean(p > 0.5)
+}
+
+# Put everything in lists for looping
+src_sets <- list(JAX = jax, MSK = msk, UCSF = ucsf, NW = nw)
+targets  <- list(JAX = ttJAX, MSK = ttMSK, UCSF = ttUCSF, NW = ttNW)
+
+# Build the 4x4 matrix using the same heuristic for every off-diagonal cell
+labs <- names(src_sets)
+prop_mat <- matrix(NA_real_, nrow = 4, ncol = 4, dimnames = list(labs, labs))
+
+for (i in labs) {
+  for (j in labs) {
+    if (i == j) {
+      prop_mat[i, j] <- 1   # or set to 1 if you prefer, but NA is more honest
+    } else {
+      prop_mat[i, j] <- score_p_uniform(src_sets[[i]], targets[[j]])
+    }
+  }
+}
+
+prop_mat
+
+```
+
+```{r}
+# UCSF DE set
+src_genes <- ucsf
+idx <- intersect(src_genes, rownames(ttNW))
+pvals_in_NW <- ttNW[idx, "P.Value"]
+
+# Proportion of p-values > 0.5
+prop_gt_0_5 <- mean(pvals_in_NW > 0.5, na.rm = TRUE)
+
+cat("Number of UCSF DE genes tested in NW:", length(pvals_in_NW), "\n")
+cat("Proportion of NW p-values > 0.5:", round(prop_gt_0_5, 3), "\n")
+cat("Heuristic non-null estimate (1 - 2*prop):", round(1 - 2*prop_gt_0_5, 3), "\n")
+
+# Histogram
+hist(pvals_in_NW, breaks = 20,
+     main = "NW p-values for UCSF DE genes",
+     xlab = "Nominal p-value (NW)",
+     col = "grey70", border = "white")
+abline(h = length(pvals_in_NW)/20, lty = 2, col = "red")
+mtext(sprintf("Prop(p>0.5) = %.2f, Non-null est = %.2f",
+              prop_gt_0_5, 1 - 2*prop_gt_0_5),
+      side = 3, line = 0.5, cex = 0.8)
+```
