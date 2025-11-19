@@ -59,8 +59,8 @@ This repository contains data and analysis pipelines for four transcription fact
 .
 ├── data/              # Processed RNA-seq / scRNA-seq data
 ├── scripts/           # Analysis scripts (R, Python, etc.)
-   ├── 01a_check_xxx_xxx # Scripts to preprocess data. The fist xxx is where the data is from (JAX, UCSF, NW, MSK), the second xxx is the date the data is processed.
-   ├── 02_DE_testing_xxx_xxx # Scripts to do DE Analysis. The fist xxx is where the data is from (JAX, UCSF, NW, MSK), the second xxx is the date the data is processed.
+   ├── 01a_check_x     # Scripts to preprocess data. The x includes where the data is from (JAX, UCSF, NW, MSK) and the date the data is processed.
+   ├── 02_DE_testing_x # Scripts to do DE Analysis. The x includes where the data is from (JAX, UCSF, NW, MSK) and the date the data is processed.
 ├── results/           # Figures, PCA, DE analysis outputs
 ├── docs/              # Notes, meeting summaries
 └── README.md          # Project overview
