@@ -54,8 +54,8 @@ Ucsf_UCSF = as.data.frame(data.table::fread(file.path(personal_path, paste0("/pu
 rownames(Ucsf_UCSF) = Ucsf_UCSF$V1
 Ucsf_NW = as.data.frame(data.table::fread(file.path(personal_path, paste0("/publication/", "UCSF_DE_NW.csv", sep=''))))
 rownames(Ucsf_NW) = Ucsf_NW$V1
-Ucsf_NW_parent = as.data.frame(data.table::fread(file.path(personal_path, paste0("/publication/", "UCSF_DE_NW_parent.csv", sep=''))))
-rownames(Ucsf_NW_parent) = Ucsf_NW_parent$V1
+Ucsf_NW_dmso = as.data.frame(data.table::fread(file.path(personal_path, paste0("/publication/", "UCSF_DE_NW_DMSO.csv", sep=''))))
+rownames(Ucsf_NW_dmso) = Ucsf_NW_dmso$V1
 ```
 
 ```{r}
@@ -156,9 +156,9 @@ ucsf_NW_JAX  <- calculate_rank_jaccard(Ucsf_NW, Ucsf_JAX)
 ucsf_NW_MSK  <- calculate_rank_jaccard(Ucsf_NW, Ucsf_MSK)
 ucsf_NW_UCSF <- calculate_rank_jaccard(Ucsf_NW, Ucsf_UCSF)
 
-ucsf_NW_parent_JAX  <- calculate_rank_jaccard(Ucsf_NW_parent, Ucsf_JAX)
-ucsf_NW_parent_MSK  <- calculate_rank_jaccard(Ucsf_NW_parent, Ucsf_MSK)
-ucsf_NW_parent_UCSF <- calculate_rank_jaccard(Ucsf_NW_parent, Ucsf_UCSF)
+ucsf_NW_dmso_JAX  <- calculate_rank_jaccard(Ucsf_NW_dmso, Ucsf_JAX)
+ucsf_NW_dmso_MSK  <- calculate_rank_jaccard(Ucsf_NW_dmso, Ucsf_MSK)
+ucsf_NW_dmso_UCSF <- calculate_rank_jaccard(Ucsf_NW_dmso, Ucsf_UCSF)
 
 # # Print the results
 # cat("Rank-Weighted Jaccard Scores for UCSF:\n")
@@ -255,7 +255,7 @@ plot_jax <- ggplot(jax_long, aes(x = Rank, y = Jaccard_Index, color = Comparison
   geom_line(data = null_df, aes(x = Rank, y = Expected), 
             inherit.aes = FALSE, color = "black", linetype = "dashed", size = 0.8) +
   # Add your actual data lines
-  geom_line(size = 1) +
+  geom_line(size = 1) + ylim(0, 1) + 
   theme_minimal() +
   labs(title = "Step-by-Step Jaccard Index (JAX Processing)",
        subtitle = "Tracking concordance among the Top 500 genes (Dashed line = Expected by chance)",
@@ -337,7 +337,7 @@ plot_ucsf <- ggplot(ucsf_long, aes(x = Rank, y = Jaccard_Index, color = Comparis
   geom_line(data = null_df, aes(x = Rank, y = Expected), 
             inherit.aes = FALSE, color = "black", linetype = "dashed", size = 0.8) +
   # Add your actual data lines
-  geom_line(size = 1) +
+  geom_line(size = 1) + ylim(0, 1) + 
   theme_minimal() +
   labs(title = "Step-by-Step Jaccard Index (UCSF Processing)",
        subtitle = "Tracking concordance among the Top 500 genes (Dashed line = Expected by chance)",
@@ -404,9 +404,9 @@ nw_long <- pivot_longer(nw_df,
 plot_nw <- ggplot(nw_long, aes(x = Rank, y = Jaccard_Index, color = Comparison)) +
   geom_line(data = null_df, aes(x = Rank, y = Expected), 
             inherit.aes = FALSE, color = "black", linetype = "dashed", size = 0.8) +
-  geom_line(size = 1) +
+  geom_line(size = 1) + ylim(0, 1) + 
   theme_minimal() +
-  labs(title = "Step-by-Step Jaccard Index: NW vs. Others",
+  labs(title = "Step-by-Step Jaccard Index: NW Parent vs. Others",
        subtitle = "UCSF Processing (Dashed line = Expected by chance)",
        x = "Rank Cutoff (Top i genes)",
        y = "Jaccard Index") +
@@ -418,27 +418,27 @@ plot_nw <- ggplot(nw_long, aes(x = Rank, y = Jaccard_Index, color = Comparison))
 # ==============================================================================
 
 # Prepare the NW_parent data for plotting
-nw_parent_df <- data.frame(
+nw_dmso_df <- data.frame(
   Rank = rank_seq,
-  `NW_parent vs JAX`  = as.numeric(ucsf_NW_parent_JAX),
-  `NW_parent vs MSK`  = as.numeric(ucsf_NW_parent_MSK),
-  `NW_parent vs UCSF` = as.numeric(ucsf_NW_parent_UCSF),
+  `NW_dmso vs JAX`  = as.numeric(ucsf_NW_dmso_JAX),
+  `NW_dmso vs MSK`  = as.numeric(ucsf_NW_dmso_MSK),
+  `NW_dmso vs UCSF` = as.numeric(ucsf_NW_dmso_UCSF),
   check.names  = FALSE
 )
 
 # Reshape from wide to long
-nw_parent_long <- pivot_longer(nw_parent_df, 
+nw_dmso_long <- pivot_longer(nw_dmso_df, 
                                cols = -Rank, 
                                names_to = "Comparison", 
                                values_to = "Jaccard_Index")
 
 # Create the NW_parent Plot
-plot_nw_parent <- ggplot(nw_parent_long, aes(x = Rank, y = Jaccard_Index, color = Comparison)) +
+plot_nw_dmso <- ggplot(nw_dmso_long, aes(x = Rank, y = Jaccard_Index, color = Comparison)) +
   geom_line(data = null_df, aes(x = Rank, y = Expected), 
             inherit.aes = FALSE, color = "black", linetype = "dashed", size = 0.8) +
-  geom_line(size = 1) +
+  geom_line(size = 1) + ylim(0, 1) + 
   theme_minimal() +
-  labs(title = "Step-by-Step Jaccard Index: NW_parent vs. Others",
+  labs(title = "Step-by-Step Jaccard Index: NW DMSO vs. Others",
        subtitle = "UCSF Processing (Dashed line = Expected by chance)",
        x = "Rank Cutoff (Top i genes)",
        y = "Jaccard Index") +
@@ -450,12 +450,12 @@ plot_nw_parent <- ggplot(nw_parent_long, aes(x = Rank, y = Jaccard_Index, color 
 # ==============================================================================
 
 print(plot_nw)
-print(plot_nw_parent)
+print(plot_nw_dmso)
 # ---- Parameters ----
 width_px  <- 1600
 height_px <- 1400
 ggsave(
-  filename = file.path(personal_path, paste0("publication/", "NW_Jaccard.png")),
+  filename = file.path(personal_path, paste0("publication/", "NW_parent_Jaccard.png")),
   plot     = plot_nw,
   device   = ragg::agg_png,
   bg       = "transparent",
@@ -465,8 +465,8 @@ ggsave(
   dpi      = 300
 )
 ggsave(
-  filename = file.path(personal_path, paste0("publication/", "NW_parent_Jaccard.png")),
-  plot     = plot_nw_parent,
+  filename = file.path(personal_path, paste0("publication/", "NW_dmso_Jaccard.png")),
+  plot     = plot_nw_dmso,
   device   = ragg::agg_png,
   bg       = "transparent",
   width    = width_px,

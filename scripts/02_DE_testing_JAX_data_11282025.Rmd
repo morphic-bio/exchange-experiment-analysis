@@ -30,6 +30,7 @@ library(ggsci)
 library(ggpointdensity)
 library(ggprism)
 library(ragg)
+library(edgeR)
 theme_set(theme_classic(base_size = 15))
 
 personal_path = "/fh/working/sun_w/sshen/MorPhiC"
@@ -108,9 +109,10 @@ gene_info = gene_info[w2kp, ]
 ```{r, fig.width = 4, fig.height=3}
 meta$read_depth = colSums(cts_dat)/1e6
 meta$q75 = apply(cts_dat, 2, quantile, probs = 0.75)
+meta$ko_strategy_clean <- gsub("CTRL_", "", meta$ko_strategy, ignore.case = TRUE)
 my_colors <- c("#E41A1C", "#377EB8", "#4DAF4A", "#984EA3", "#FF7F00", 
                "#FFFF33", "#A65628", "#F781BF", "#999999", "#66C2A5", "#301934")
-names(my_colors) = unique(meta$ko_strategy)
+names(my_colors) = unique(meta$ko_strategy_clean)
 meta$run_id_short = meta$run_id
 ```
 
@@ -134,10 +136,15 @@ pvs
 PC_df = data.frame(pc_scores)
 PC_df = cbind(PC_df, meta)
 
-gPC = ggplot(PC_df, aes(x = PC1, y = PC2, shape=ko_gene, color=ko_strategy)) +
+# Note: if you want the plot to USE the new column, change `color=ko_strategy` 
+# to `color=ko_strategy_clean` below. Ensure `my_colors` is updated to match the new names!
+gPC = ggplot(PC_df, aes(x = PC1, y = PC2, shape=ko_gene, color=ko_strategy_clean)) +
   geom_point(size=2.5, alpha=0.7) + 
   scale_color_manual(values = my_colors) +
-  scale_shape_prism() + 
+  
+  # Replace scale_shape_prism() with explicit manual shapes
+  scale_shape_manual(values = c("GCM1" = 10, "WT" = 15)) + 
+  
   labs(color="KO type", shape ="KO gene") + 
   xlab(sprintf("PC1 (%.1f%% variance)", pvs[1])) + 
   ylab(sprintf("PC2 (%.1f%% variance)", pvs[2])) + 
@@ -158,13 +165,13 @@ width_px  = 1920
 height_px = round(width_px * (3/4)) 
 
 ggsave(
-  filename = file.path(personal_path, paste0("/publication/", "PCPlot_all_samples.png",sep='')),
+  filename = file.path(personal_path, paste0("/publication/", "JAX_PCPlot_all_samples.png",sep='')),
   plot     = gPC,
   device   = ragg::agg_png,     # AGG backend, full alpha support
   bg       = "transparent",
   width    = width_px,
   height   = height_px,
-  units    = "px",        
+  units    = "px",
   dpi      = 300,
 )
 ```
@@ -172,6 +179,7 @@ ggsave(
 ### PCA for samples we are using
 
 ```{r}
+meta$ko_strategy_clean <- gsub("CTRL_", "", meta$ko_strategy, ignore.case = TRUE)
 model1 = c("UCSF_Pool1_DMSO_Rep", "UCSF_Pool2_DMSO_Rep", "UCSF_Pool1_DOX_Rep", "UCSF_Pool2_DOX_Rep",
            "NW_C20_DMSO_Rep", "NW_C43_DMSO_Rep", "NW_C20_IAA_Rep", "NW_C43_IAA_Rep",
            "JAX_C01_Rep", "JAX_E04_Rep", "MSK_Clone1_Rep", "MSK_Clone2_Rep", "JAX_MSK_WT", 'NW_Parent_IAA_Rep', 'NW_Parent_DMSO_Rep')
@@ -198,9 +206,13 @@ pvs
 PC_df = data.frame(pc_scores)
 PC_df = cbind(PC_df, meta_m)
 
-gPC = ggplot(PC_df, aes(x = PC1, y = PC2, shape=ko_gene, color=ko_strategy)) +
-  geom_point(size=2.5, alpha=0.7) + scale_color_manual(values = my_colors) +
-  scale_shape_prism() + 
+gPC = ggplot(PC_df, aes(x = PC1, y = PC2, shape=ko_gene, color=ko_strategy_clean)) +
+  geom_point(size=2.5, alpha=0.7) + 
+  scale_color_manual(values = my_colors) +
+  
+  # Replace scale_shape_prism() with explicit manual shapes
+  scale_shape_manual(values = c("GCM1" = 10, "WT" = 15)) + 
+  
   labs(color="KO type", shape ="KO gene") + 
   xlab(sprintf("PC1 (%.1f%% variance)", pvs[1])) + 
   ylab(sprintf("PC2 (%.1f%% variance)", pvs[2])) + 
@@ -221,20 +233,22 @@ width_px  = 1920
 height_px = round(width_px * (3/4)) 
 
 ggsave(
-  filename = file.path(personal_path, paste0("/publication/", "PCPlot_selected_samples.png",sep='')),
+  filename = file.path(personal_path, paste0("/publication/", "JAX_PCPlot_selected_samples.png",sep='')),
   plot     = gPC,
   device   = ragg::agg_png,     # AGG backend, full alpha support
   bg       = "transparent",
   width    = width_px,
   height   = height_px,
-  units    = "px",       
+  units    = "px",
   dpi      = 300,
 )
 
 PC_df$model_condition = gsub("_Rep", "", PC_df$model_condition)
 gPC = ggplot(PC_df, aes(x = PC1, y = PC2, shape=ko_gene, color=model_condition)) +
   geom_point(size=2.5, alpha=0.7) + 
-  scale_shape_prism() + 
+  # Replace scale_shape_prism() with explicit manual shapes
+  scale_shape_manual(values = c("GCM1" = 10, "WT" = 15)) + 
+  
   labs(color="KO type", shape ="KO gene") + 
   xlab(sprintf("PC1 (%.1f%% variance)", pvs[1])) + 
   ylab(sprintf("PC2 (%.1f%% variance)", pvs[2])) + 
@@ -255,13 +269,13 @@ width_px  = 1920
 height_px = round(width_px * (3/4)) 
 
 ggsave(
-  filename = file.path(personal_path, paste0("/publication/", "PCPlot_selected_samples_detailed.png",sep='')),
+  filename = file.path(personal_path, paste0("/publication/", "JAX_PCPlot_selected_samples_detailed.png",sep='')),
   plot     = gPC,
   device   = ragg::agg_png,     # AGG backend, full alpha support
   bg       = "transparent",
   width    = width_px,
   height   = height_px,
-  units    = "px",       
+  units    = "px",
   dpi      = 300,
 )
 ```
@@ -466,9 +480,9 @@ nrow(ttNW3Sig)
 
 ```{r}
 # Add a significance column for coloring
-ttNW$threshold <- ttNW$adj.P.Val < 0.05 & abs(ttNW$logFC) > 1
+ttNW3$threshold <- ttNW3$adj.P.Val < 0.05 & abs(ttNW3$logFC) > 1
 
-p2 = ggplot(ttNW, aes(x = logFC, y = -log10(adj.P.Val))) +
+p2 = ggplot(ttNW3, aes(x = logFC, y = -log10(adj.P.Val))) +
   geom_point(aes(color = threshold), alpha = 0.6, size = 1.5) +
   scale_color_manual(values = c("FALSE" = "grey70", "TRUE" = "red")) +
   theme_minimal(base_size = 14) +
@@ -537,121 +551,4 @@ ggsave(
   units    = "px",
   dpi      = 300,
 )
-```
-
-### Limma outputs
-
-```{r}
-gene_anno$hgnc_symbol[gene_anno$hgnc_symbol == ""] = gene_anno$ensembl_gene_id[gene_anno$hgnc_symbol == ""]
-gene_anno[gene_anno$hgnc_symbol == "LINC01238", ]$hgnc_symbol = paste0("LINC01238_", c(1, 2))
-rownames(ttJAX) = gene_anno[match(rownames(ttJAX), gene_anno$ensembl_gene_id), ]$hgnc_symbol
-rownames(ttMSK) = gene_anno[match(rownames(ttMSK), gene_anno$ensembl_gene_id), ]$hgnc_symbol
-rownames(ttUCSF) = gene_anno[match(rownames(ttUCSF), gene_anno$ensembl_gene_id), ]$hgnc_symbol
-rownames(ttNW) = gene_anno[match(rownames(ttNW), gene_anno$ensembl_gene_id), ]$hgnc_symbol
-write.table(ttJAX[, 1:6], file = file.path(personal_path, paste0("/publication/", "JAX_DE_JAX.csv", sep='')), 
-            sep = "\t", quote = FALSE)
-write.table(ttMSK[, 1:6], file = file.path(personal_path, paste0("/publication/", "JAX_DE_MSK.csv", sep='')), 
-            sep = "\t", quote = FALSE)
-write.table(ttUCSF[, 1:6], file = file.path(personal_path, paste0("/publication/", "JAX_DE_UCSF.csv", sep='')), 
-            sep = "\t", quote = FALSE)
-write.table(ttNW[, 1:6], file = file.path(personal_path, paste0("/publication/", "JAX_DE_NW.csv", sep='')), 
-            sep = "\t", quote = FALSE)
-```
-
-### Proportion matrix generation
-
-```{r}
-ttJAX = as.data.frame(data.table::fread(file.path(personal_path, paste0("/publication/", "JAX_DE_JAX.csv", sep=''))))
-rownames(ttJAX) = ttJAX$V1
-ttMSK = as.data.frame(data.table::fread(file.path(personal_path, paste0("/publication/", "JAX_DE_MSK.csv", sep=''))))
-rownames(ttMSK) = ttMSK$V1
-ttUCSF = as.data.frame(data.table::fread(file.path(personal_path, paste0("/publication/", "JAX_DE_UCSF.csv", sep=''))))
-rownames(ttUCSF) = ttUCSF$V1
-ttNW = as.data.frame(data.table::fread(file.path(personal_path, paste0("/publication/", "JAX_DE_NW.csv", sep=''))))
-rownames(ttNW) = ttNW$V1
-
-jax = rownames(ttJAX[abs(ttJAX$logFC) > 1 & ttJAX$adj.P.Val < 0.05, ])
-msk = rownames(ttMSK[abs(ttMSK$logFC) > 1 & ttMSK$adj.P.Val < 0.05, ])
-ucsf = rownames(ttUCSF[abs(ttUCSF$logFC) > 1 & ttUCSF$adj.P.Val < 0.05, ])
-nw = rownames(ttNW[abs(ttNW$logFC) > 1 & ttNW$adj.P.Val < 0.05, ])
-
-prop_mat = matrix(1, nrow = 4, ncol = 4)
-prop_mat[1, 2] = sum(msk %in% jax) / length(msk)
-prop_mat[1, 3] = sum(ucsf %in% jax) / length(ucsf)
-prop_mat[1, 4] = sum(nw %in% jax) / length(nw)
-prop_mat[2, 1] = sum(jax %in% msk) / length(jax)
-prop_mat[2, 3] = sum(ucsf %in% msk) / length(ucsf)
-prop_mat[2, 4] = sum(nw %in% msk) / length(nw)
-prop_mat[3, 1] = sum(jax %in% ucsf) / length(jax)
-prop_mat[3, 2] = sum(msk %in% ucsf) / length(msk)
-prop_mat[3, 4] = sum(nw %in% ucsf) / length(nw)
-prop_mat[4, 1] = sum(jax %in% nw) / length(jax)
-prop_mat[4, 2] = sum(msk %in% nw) / length(msk)
-prop_mat[4, 3] = sum(ucsf %in% nw) / length(ucsf)
-
-rownames(prop_mat) = c("JAX", "MSK", "UCSF", "NW")
-colnames(prop_mat) = c("JAX", "MSK", "UCSF", "NW")
-```
-
-```{r}
-# Define DE sets from each cohort (keep your current thresholds for defining the source gene set)
-jax  <- rownames(ttJAX [abs(ttJAX$logFC)  > 1 & ttJAX$adj.P.Val  < 0.05, ])
-msk  <- rownames(ttMSK [abs(ttMSK$logFC)  > 1 & ttMSK$adj.P.Val  < 0.05, ])
-ucsf <- rownames(ttUCSF[abs(ttUCSF$logFC) > 1 & ttUCSF$adj.P.Val < 0.05, ])
-nw   <- rownames(ttNW  [abs(ttNW$logFC)   > 1 & ttNW$adj.P.Val   < 0.05, ])
-
-# 1 - 2 * prop(p > 0.5) using NOMINAL p-values in the target table
-score_p_uniform <- function(src_genes, tt_target) {
-  idx <- intersect(src_genes, rownames(tt_target))
-  if (length(idx) == 0) return(NA_real_)
-  p <- tt_target[idx, "P.Value"]           # <- nominal p-values
-  p <- p[is.finite(p)]
-  if (length(p) == 0) return(NA_real_)
-  1 - 2 * mean(p > 0.5)
-}
-
-# Put everything in lists for looping
-src_sets <- list(JAX = jax, MSK = msk, UCSF = ucsf, NW = nw)
-targets  <- list(JAX = ttJAX, MSK = ttMSK, UCSF = ttUCSF, NW = ttNW)
-
-# Build the 4x4 matrix using the same heuristic for every off-diagonal cell
-labs <- names(src_sets)
-prop_mat <- matrix(NA_real_, nrow = 4, ncol = 4, dimnames = list(labs, labs))
-
-for (i in labs) {
-  for (j in labs) {
-    if (i == j) {
-      prop_mat[i, j] <- 1   # or set to 1 if you prefer, but NA is more honest
-    } else {
-      prop_mat[i, j] <- score_p_uniform(src_sets[[i]], targets[[j]])
-    }
-  }
-}
-
-prop_mat
-
-```
-
-```{r}
-# UCSF DE set
-src_genes <- ucsf
-idx <- intersect(src_genes, rownames(ttNW))
-pvals_in_NW <- ttNW[idx, "P.Value"]
-
-# Proportion of p-values > 0.5
-prop_gt_0_5 <- mean(pvals_in_NW > 0.5, na.rm = TRUE)
-
-cat("Number of UCSF DE genes tested in NW:", length(pvals_in_NW), "\n")
-cat("Proportion of NW p-values > 0.5:", round(prop_gt_0_5, 3), "\n")
-cat("Heuristic non-null estimate (1 - 2*prop):", round(1 - 2*prop_gt_0_5, 3), "\n")
-
-# Histogram
-hist(pvals_in_NW, breaks = 20,
-     main = "NW p-values for UCSF DE genes",
-     xlab = "Nominal p-value (NW)",
-     col = "grey70", border = "white")
-abline(h = length(pvals_in_NW)/20, lty = 2, col = "red")
-mtext(sprintf("Prop(p>0.5) = %.2f, Non-null est = %.2f",
-              prop_gt_0_5, 1 - 2*prop_gt_0_5),
-      side = 3, line = 0.5, cex = 0.8)
 ```

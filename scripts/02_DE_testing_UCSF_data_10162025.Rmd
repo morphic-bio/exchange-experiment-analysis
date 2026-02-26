@@ -98,11 +98,42 @@ gene_info = gene_info[w2kp, ]
 ### Check read depth vs. gene expression quantile
 
 ```{r, fig.width = 4, fig.height=3}
+library(dplyr)
+
+# 1. Define conditions to remove
+remove_conditions <- c("KOLF_Parent_ Plus_Dox", "KOLF_Parent_Plus_DMSO", "KOLF_Parent_Plus_IAA")
+
+# 2. Filter out unwanted samples from 'meta' and sync 'cts_dat'
+keep_samples <- !meta$Dcondition %in% remove_conditions
+meta <- meta[keep_samples, ]
+cts_dat <- cts_dat[, keep_samples]
+
+# 3. Create a NEW column for the cleaned conditions, preserving original Dcondition
+meta <- meta %>%
+  mutate(new_condition = case_when(
+    Dcondition %in% c("JAX_Clone_A03", "JAX_Clone_A06") ~ "KO_JAX",
+    Dcondition %in% c("MSK_Clone_K03", "MSK_Clone_K04") ~ "KO_MSK",
+    Dcondition == "KOLF_Parent" ~ "KO_WT",
+    Dcondition == "NW_OSTIR_NKX2_1_Plus_IAA" ~ "AID_NW",
+    Dcondition == "NW_OSTIR_NKX2_1_Plus_DMSO" ~ "AID_DMSO",
+    Dcondition == "NW_OSTIR" ~ "AID_OsTIR1",
+    Dcondition == "UCSF_CRISPRi" ~ "CRISPRi_WT",
+    Dcondition == "UCSF_CRISPRi_NKX2_1_guides_No_Dox" ~ "CRISPRi_DMSO",
+    Dcondition == "UCSF_CRISPRi_NKX2_1_guides_Plus_Dox" ~ "CRISPRi_UCSF",
+    TRUE ~ Dcondition # Keeps any other groups (like MSK clones) exactly as they were
+  ))
+
+# 4. Run your original depth/quantile calculations on the cleaned data
 meta$read_depth = colSums(cts_dat)/1e6
 meta$q75 = apply(cts_dat, 2, quantile, probs = 0.75)
-my_colors <- c("#E41A1C", "#377EB8", "#4DAF4A", "#984EA3", "#FF7F00", "pink", "green", "blue",
-               "#660033", "#A65628", "#F781BF", "#999999", "#66C2A5", "#301934")
-names(my_colors) = unique(meta$Dcondition)
+
+# 5. Reassign your colors based on the NEW column
+my_colors <- c("#E41A1C", "#377EB8", "#4DAF4A", "#984EA3", "#FF7F00", 
+               "#FFFF33", "#A65628", "#F781BF", "#999999", "#66C2A5", "#301934")
+
+# Trim the color palette to match the exact number of unique conditions in the new column
+unique_conditions <- unique(meta$new_condition)
+names(my_colors) = c('AID_OsTIR1', 'CRISPRi_WT', 'CRISPRi_DMSO', 'CRISPRi_AAVS1', 'AID_NW', 'AID_DMSO', 'AID_WT', 'KO_JAX', 'KO_WT', 'CRISPRi_UCSF',        'KO_MSK')
 ```
 
 ### PCA for all samples
@@ -125,7 +156,7 @@ pvs
 PC_df = data.frame(pc_scores)
 PC_df = cbind(PC_df, meta)
 
-gPC = ggplot(PC_df, aes(x = PC1, y = PC2, color=Dcondition, shape = KO_WT)) +
+gPC = ggplot(PC_df, aes(x = PC1, y = PC2, color=new_condition, shape = KO_WT)) +
   geom_point(size=2.5, alpha=0.7) + 
   scale_color_manual(values = my_colors) +
   scale_shape_manual(values = c("WT" = 16, "KO" = 5)) + 
@@ -181,7 +212,7 @@ pvs
 PC_df = data.frame(pc_scores)
 PC_df = cbind(PC_df, meta_w)
 
-gPC = ggplot(PC_df, aes(x = PC1, y = PC2, color=Dcondition, shape = KO_WT)) +
+gPC = ggplot(PC_df, aes(x = PC1, y = PC2, color=new_condition, shape = KO_WT)) +
   geom_point(size=2.5, alpha=0.7) + 
   scale_color_manual(values = my_colors) +
   scale_shape_manual(values = c("WT" = 16, "KO" = 5)) + 
@@ -202,7 +233,7 @@ gPC = ggplot(PC_df, aes(x = PC1, y = PC2, color=Dcondition, shape = KO_WT)) +
 print(gPC)
 
 width_px  = 2500
-height_px = round(width_px * (2/4)) 
+height_px = round(width_px * (2/4))
 
 ggsave(
   filename = file.path(personal_path, paste0("/publication/", "UCSF_PCPlot_no_MSK.png",sep='')),
@@ -250,7 +281,7 @@ pvs
 PC_df = data.frame(pc_scores)
 PC_df = cbind(PC_df, meta_m)
 
-gPC = ggplot(PC_df, aes(x = PC1, y = PC2, color=Dcondition, shape = KO_WT)) +
+gPC = ggplot(PC_df, aes(x = PC1, y = PC2, color=new_condition, shape = KO_WT)) +
   geom_point(size=2.5, alpha=0.7) + 
   scale_color_manual(values = my_colors) +
   scale_shape_manual(values = c("WT" = 16, "KO" = 5)) + 
@@ -309,7 +340,7 @@ pvs
 PC_df = data.frame(pc_scores)
 PC_df = cbind(PC_df, meta_m)
 
-gPC = ggplot(PC_df, aes(x = PC1, y = PC2, color=Dcondition, shape = KO_WT)) +
+gPC = ggplot(PC_df, aes(x = PC1, y = PC2, color=new_condition, shape = KO_WT)) +
   geom_point(size=2.5, alpha=0.7) + 
   scale_color_manual(values = my_colors) +
   scale_shape_manual(values = c("WT" = 16, "KO" = 5)) + 
@@ -354,7 +385,7 @@ pvs
 PC_df = data.frame(pc_scores)
 PC_df = cbind(PC_df, meta_w)
 
-gPC = ggplot(PC_df, aes(x = PC1, y = PC2, color=Dcondition, shape = KO_WT)) +
+gPC = ggplot(PC_df, aes(x = PC1, y = PC2, color=new_condition, shape = KO_WT)) +
   geom_point(size=2.5, alpha=0.7) + 
   scale_color_manual(values = my_colors) +
   scale_shape_manual(values = c("WT" = 16, "KO" = 5)) + 
@@ -379,65 +410,6 @@ height_px = round(width_px * (2/4))
 
 ggsave(
   filename = file.path(personal_path, paste0("/publication/", "UCSF_PCPlot_WT_samples.png",sep='')),
-  plot     = gPC,
-  device   = ragg::agg_png,     # AGG backend, full alpha support
-  bg       = "transparent",
-  width    = width_px,
-  height   = height_px,
-  units    = "px",
-  dpi      = 300,
-)
-```
-
-```{r fig.height=5.2, fig.width=8}
-# PCA of all samples
-q75 = apply(cts_dat, 1, quantile, probs=0.75)
-cts_dat_n = t(cts_dat[q75 > 0,])
-cts_dat_n = log(median(meta$q75)*cts_dat_n/meta$q75 + 1)
-dim(cts_dat_n)
-
-cts_dat_n_w = cts_dat_n[grep("KOLF", meta$Dcondition), ]
-meta_w = meta[grep("KOLF", meta$Dcondition), ]
-
-q95 = apply(t(cts_dat_n_w), 1, quantile, probs=0.95)
-cts_dat_n_w = cts_dat_n_w[,q95 > 0]
-
-sample_pca = prcomp(cts_dat_n_w, center = TRUE, scale. = TRUE)
-names(sample_pca)
-pc_scores = sample_pca$x
-eigen_vals = sample_pca$sdev^2
-eigen_vals[1:5]/sum(eigen_vals)
-pvs = round(eigen_vals[1:5]/sum(eigen_vals)*100,1)
-pvs
-
-PC_df = data.frame(pc_scores)
-PC_df = cbind(PC_df, meta_w)
-
-gPC = ggplot(PC_df, aes(x = PC1, y = PC2, color=Dcondition, shape = KO_WT)) +
-  geom_point(size=2.5, alpha=0.7) + 
-  scale_color_manual(values = my_colors) +
-  scale_shape_manual(values = c("WT" = 16, "KO" = 5)) + 
-  labs(color="KO type") + 
-  xlab(sprintf("PC1 (%.1f%% variance)", pvs[1])) + 
-  ylab(sprintf("PC2 (%.1f%% variance)", pvs[2])) + 
-  ggtitle("KOLF samples") + 
-  guides(
-    color = guide_legend(title = NULL, order = 1),
-    shape = guide_legend(title = NULL, order = 2)
-  ) +
-  theme(
-    legend.margin = margin(0, 0, 0, 0), 
-    legend.box.just = "left", 
-    legend.direction = "vertical" 
-  )
-
-print(gPC)
-
-width_px  = 2000
-height_px = round(width_px * (2.5/4)) 
-
-ggsave(
-  filename = file.path(personal_path, paste0("/publication/", "UCSF_PCPlot_KOLF_samples.png",sep='')),
   plot     = gPC,
   device   = ragg::agg_png,     # AGG backend, full alpha support
   bg       = "transparent",
@@ -474,7 +446,7 @@ pvs
 PC_df = data.frame(pc_scores)
 PC_df = cbind(PC_df, meta_m)
 
-gPC = ggplot(PC_df, aes(x = PC1, y = PC2, shape=KO_WT, color=Dcondition)) +
+gPC = ggplot(PC_df, aes(x = PC1, y = PC2, shape=KO_WT, color=new_condition)) +
   geom_point(size=2.5, alpha=0.7) + scale_color_manual(values = my_colors) +
   scale_shape_manual(values = c("WT" = 16, "KO" = 5)) + 
   labs(color="KO type", shape ="KO gene") + 
@@ -605,7 +577,7 @@ ttNW   <- topTable(fitNW, coef = "KOvsWT", number = Inf)
 ```
 
 
-### DE analysis for NW with parents
+### DE analysis for NW with dmso
 
 ```{r fig.height=3.2, fig.width=4.8, message=FALSE, warning=FALSE}
 model1 = c("NW_OSTIR_NKX2_1_Plus_IAA", "NW_OSTIR_NKX2_1_Plus_DMSO", "UCSF_CRISPRi_NKX2_1_guides_Plus_Dox", "UCSF_CRISPRi_NKX2_1_guides_No_Dox")
@@ -663,7 +635,7 @@ fitNW <- lmFit(v2, design2)
 # ---- KO vs WT contrast ----
 L2 <- makeContrasts(KOvsWT = KO - WT, levels = design2)
 fitNW <- eBayes(contrasts.fit(fitNW, L2))
-ttNW_parent   <- topTable(fitNW, coef = "KOvsWT", number = Inf)
+ttNW_dmso   <- topTable(fitNW, coef = "KOvsWT", number = Inf)
 
 # pheatmap(cor(v2$E))
 ```
@@ -1034,7 +1006,7 @@ rownames(ttJAX) <- map_symbols(rownames(ttJAX), gene_anno)
 rownames(ttUCSF) <- map_symbols(rownames(ttUCSF), gene_anno)
 rownames(ttNW)  <- map_symbols(rownames(ttNW),  gene_anno)
 rownames(ttMSK)  <- map_symbols(rownames(ttMSK),  gene_anno)
-rownames(ttNW_parent)  <- map_symbols(rownames(ttNW_parent),  gene_anno)
+rownames(ttNW_dmso)  <- map_symbols(rownames(ttNW_dmso),  gene_anno)
 
 write.table(ttJAX[, 1:6], file = file.path(personal_path, paste0("/publication/", "UCSF_DE_JAX.csv", sep='')),
             sep = "\t", quote = FALSE)
@@ -1042,7 +1014,7 @@ write.table(ttUCSF[, 1:6], file = file.path(personal_path, paste0("/publication/
             sep = "\t", quote = FALSE)
 write.table(ttNW[, 1:6], file = file.path(personal_path, paste0("/publication/", "UCSF_DE_NW.csv", sep='')),
             sep = "\t", quote = FALSE)
-write.table(ttNW_parent[, 1:6], file = file.path(personal_path, paste0("/publication/", "UCSF_DE_NW_parent.csv", sep='')),
+write.table(ttNW_dmso[, 1:6], file = file.path(personal_path, paste0("/publication/", "UCSF_DE_NW_DMSO.csv", sep='')),
             sep = "\t", quote = FALSE)
 write.table(ttMSK[, 1:6], file = file.path(personal_path, paste0("/publication/", "UCSF_DE_MSK.csv", sep='')),
             sep = "\t", quote = FALSE)
