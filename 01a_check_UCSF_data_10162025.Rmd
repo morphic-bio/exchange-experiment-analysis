@@ -1,0 +1,82 @@
+---
+title: "Untitled"
+output: html_document
+date: "2025-10-06"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+## R libraries.
+
+```{r load_libraries, warning = FALSE, message = FALSE}
+library(ggplot2)
+library(ggrepel)
+library(ggpubr)
+library(stringr)
+library(MASS)
+library(RColorBrewer)
+
+library(viridis)
+library(ggpointdensity)
+library(dplyr)
+library(data.table)
+library(readxl)
+
+theme_set(theme_classic())
+
+personal_path = "/fh/working/sun_w/sshen/MorPhiC"
+path = "/fh/fast/sun_w/MorPhiC/data/MorPhiC_exchange_experiment/"
+dat_path = file.path(path, "DRACC-processed/UCSF_exchange_experiment_DRACC_processed_August205/Tables")
+
+metadata_path = file.path(path, "UCSF/morphic_exchange_experiment/metadata")
+
+read_header <- function(file_name, sheet){
+  
+  meta_header = fread(file_name)
+  meta_header = as.character(meta_header)
+  meta_header = gsub("_cell_line", "", meta_header, fixed = TRUE)
+  meta_header = gsub("differentiated_product.", "", meta_header, fixed = TRUE)
+  meta_header = gsub(".text", "", meta_header, fixed = TRUE)
+  
+  meta_header
+}
+```
+
+## Read in meta data
+
+```{r fig.width = 3, fig.height=3}
+meta_file = paste0(metadata_path, "/exchange_experiment_samplesheet.csv")
+
+cl = fread(meta_file)
+cl = as.data.frame(cl)
+dim(cl)
+```
+
+```{r}
+cl$Dcondition = cl$Name
+cl$Dcondition <- gsub("_Rep_[0-9]+", "", cl$Dcondition)   # remove "_Rep_1", "_Rep_2", etc.
+cl$Dcondition <- gsub(" [0-9]+$", "", cl$Dcondition) 
+cl$Name = gsub(" ", "_", cl$Name)
+
+```
+
+## Check count data
+
+```{r fig.width = 5.5, fig.height=4}
+cts = fread(file.path(dat_path, "genesCounts.csv"), data.table = FALSE)
+cts = cts[, -1]
+colnames(cts) <- gsub("_S[0-9]+_L[0-9]+$", "", colnames(cts))
+
+cl = cl[match(colnames(cts), cl$Name), ]
+fwrite(cl, file = file.path(personal_path, "UCSF_meta_data.tsv"), sep="\t")
+
+```
+
+
+```{r}
+gc()
+sessionInfo()
+```
