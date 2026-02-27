@@ -128,12 +128,11 @@ meta$read_depth = colSums(cts_dat)/1e6
 meta$q75 = apply(cts_dat, 2, quantile, probs = 0.75)
 
 # 5. Reassign your colors based on the NEW column
-my_colors <- c("#E41A1C", "#377EB8", "#4DAF4A", "#984EA3", "#FF7F00", 
-               "#FFFF33", "#A65628", "#F781BF", "#999999", "#66C2A5", "#301934")
+my_colors <- paletteer::paletteer_d("ggsci::category20_d3")[1:12]
 
 # Trim the color palette to match the exact number of unique conditions in the new column
 unique_conditions <- unique(meta$new_condition)
-names(my_colors) = c('AID_OsTIR1', 'CRISPRi_WT', 'CRISPRi_DMSO', 'CRISPRi_AAVS1', 'AID_NW', 'AID_DMSO', 'AID_WT', 'KO_JAX', 'KO_WT', 'CRISPRi_UCSF',        'KO_MSK')
+names(my_colors) = c("AID_OsTIR1",        "CRISPRi_WT",         "CRISPRi_DMSO",       "CRISPRi_AAVS1_DMSO", "AID_NW" ,            "AID_DMSO",           "AID_WT" ,           "KO_JAX"      ,       "KO_WT"    ,          "CRISPRi_UCSF"    ,   "KO_MSK"         ,    "CRISPRi_AAVS1"    )
 ```
 
 ### PCA for all samples
