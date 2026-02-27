@@ -1,0 +1,43 @@
+Name	Center	Replicate	Condition	Dcondition
+MSK_Clone_K04_Rep_2	MSK	2	full knockdown	MSK_Clone_K04
+KOLF_Parent__Plus_Dox_Rep_2	UCSF	2	parent line control plus dox	KOLF_Parent_ Plus_Dox
+NW_OSTIR_NKX2_1_Plus_IAA_Rep_1	NorthWestern	1	degron plus IAA	NW_OSTIR_NKX2_1_Plus_IAA
+NW_OSTIR_NKX2_1_Plus_DMSO_Rep_1	NorthWestern	1	degron plus DMSO	NW_OSTIR_NKX2_1_Plus_DMSO
+NW_OSTIR_NKX2_1_Plus_DMSO_Rep_3	NorthWestern	3	degron plus DMSO	NW_OSTIR_NKX2_1_Plus_DMSO
+UCSF_CRISPRi_NKX2_1_guides_Plus_Dox_1	UCSF	1	CRISPRi plus guide plus Dox	UCSF_CRISPRi_NKX2_1_guides_Plus_Dox
+UCSF_CRISPRi_Rep_2	UCSF	2	CRISPRi no guide plus Dox	UCSF_CRISPRi
+NW_OSTIR_Rep_3	NorthWestern	3	no degron control plus IAA	NW_OSTIR
+JAX_Clone_A03_Rep_1	JAX	1	full knockdown	JAX_Clone_A03
+KOLF_Parent__Plus_Dox_Rep_1	UCSF	1	parent line control plus dox	KOLF_Parent_ Plus_Dox
+JAX_Clone_A06_Rep_3	JAX	3	full knockdown	JAX_Clone_A06
+NW_OSTIR_NKX2_1_Plus_IAA_Rep_2	NorthWestern	2	degron plus IAA	NW_OSTIR_NKX2_1_Plus_IAA
+MSK_Clone_K04_Rep_1	MSK	1	full knockdown	MSK_Clone_K04
+UCSF_CRISPRi_NKX2_1_guides_No_Dox_3	UCSF	3	CRISPRi plus guide no Dox	UCSF_CRISPRi_NKX2_1_guides_No_Dox
+UCSF_CRISPRi_Rep_3	UCSF	3	CRISPRi no guide plus Dox	UCSF_CRISPRi
+UCSF_CRISPRi_NKX2_1_guides_Plus_Dox_3	UCSF	3	CRISPRi plus guide plus Dox	UCSF_CRISPRi_NKX2_1_guides_Plus_Dox
+JAX_Clone_A06_Rep_1	JAX	1	full knockdown	JAX_Clone_A06
+KOLF_Parent_Plus_IAA_Rep_3	UCSF	3	parent line control plus IAA	KOLF_Parent_Plus_IAA
+UCSF_CRISPRi_NKX2_1_guides_No_Dox_1	UCSF	1	CRISPRi plus guide no Dox	UCSF_CRISPRi_NKX2_1_guides_No_Dox
+KOLF_Parent__Plus_Dox_Rep_3	UCSF	3	parent line control plus dox	KOLF_Parent_ Plus_Dox
+KOLF_Parent_Plus_IAA_Rep_2	UCSF	2	parent line control plus IAA	KOLF_Parent_Plus_IAA
+JAX_Clone_A03_Rep_2	JAX	2	full knockdown	JAX_Clone_A03
+NW_OSTIR_Rep_1	NorthWestern	1	no degron control plus IAA	NW_OSTIR
+JAX_Clone_A03_Rep_3	JAX	3	full knockdown	JAX_Clone_A03
+NW_OSTIR_NKX2_1_Plus_IAA_Rep_3	NorthWestern	3	degron plus IAA	NW_OSTIR_NKX2_1_Plus_IAA
+NW_OSTIR_Rep_2	NorthWestern	2	no degron control plus IAA	NW_OSTIR
+UCSF_CRISPRi_NKX2_1_guides_No_Dox_2	UCSF	2	CRISPRi plus guide no Dox	UCSF_CRISPRi_NKX2_1_guides_No_Dox
+KOLF_Parent_Plus_DMSO_Rep_2	UCSF	2	parent line control plus DMSO	KOLF_Parent_Plus_DMSO
+KOLF_Parent_Plus_DMSO_Rep_3	UCSF	3	parent line control plus DMSO	KOLF_Parent_Plus_DMSO
+KOLF_Parent_Plus_DMSO_Rep_1	UCSF	1	parent line control plus DMSO	KOLF_Parent_Plus_DMSO
+MSK_Clone_K04_Rep_3	MSK	3	full knockdown	MSK_Clone_K04
+KOLF_Parent_Rep_2	UCSF	2	parent line control none	KOLF_Parent
+UCSF_CRISPRi_Rep_1	UCSF	1	CRISPRi no guide plus Dox	UCSF_CRISPRi
+MSK_Clone_K03_Rep_3	MSK	3	full knockdown	MSK_Clone_K03
+NW_OSTIR_NKX2_1_Plus_DMSO_Rep_2	NorthWestern	2	degron plus DMSO	NW_OSTIR_NKX2_1_Plus_DMSO
+MSK_Clone_K03_Rep_1	MSK	1	full knockdown	MSK_Clone_K03
+UCSF_CRISPRi_NKX2_1_guides_Plus_Dox_2	UCSF	2	CRISPRi plus guide plus Dox	UCSF_CRISPRi_NKX2_1_guides_Plus_Dox
+KOLF_Parent_Rep_3	UCSF	3	parent line control none	KOLF_Parent
+JAX_Clone_A06_Rep_2	JAX	2	full knockdown	JAX_Clone_A06
+MSK_Clone_K03_Rep_2	MSK	2	full knockdown	MSK_Clone_K03
+KOLF_Parent_Rep_1	UCSF	1	parent line control none	KOLF_Parent
+KOLF_Parent_Plus_IAA_Rep_1	UCSF	1	parent line control plus IAA	KOLF_Parent_Plus_IAA
