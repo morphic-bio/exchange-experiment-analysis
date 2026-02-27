@@ -156,18 +156,58 @@ pvs
 PC_df = data.frame(pc_scores)
 PC_df = cbind(PC_df, meta)
 
-gPC = ggplot(PC_df, aes(x = PC1, y = PC2, color=new_condition, shape = KO_WT)) +
-  geom_point(size=2.5, alpha=0.7) + 
+# 1. Define the specific name mappings
+label_map <- c(
+  "KO_WT"         = "KO WT",
+  "AID_WT"        = "NW WT",
+  "AID_DMSO"      = "NW OsTIR Gene Tag +DMSO",
+  "AID_NW"        = "NW OsTIR Gene Tag +IAA",
+  "AID_OsTIR1"    = "NW OsTIR",
+  "CRISPRi_AAVS1" = "UCSF CRISPRi AAVS1 +Dox",
+  "CRISPRi_AAVS1_DMSO" = "UCSF CRISPRi AAVS1 +DMSO",
+  "CRISPRi_DMSO"  = "UCSF CRISPRi sgRNA +DMSO",
+  "CRISPRi_UCSF"  = "UCSF CRISPRi sgRNA +Dox",
+  "CRISPRi_WT"    = "UCSF CRISPRi WT",
+  "KO_JAX"        = "JAX KO",
+  "KO_MSK"        = "MSK KO"
+)
+
+# 2. Apply the mapping to create a unified label column
+PC_df$plot_label <- label_map[PC_df$new_condition]
+
+# For any conditions not in the explicit list (e.g., AID_WT, KO_WT), 
+# just replace the underscores with spaces
+is_na_label <- is.na(PC_df$plot_label)
+PC_df$plot_label[is_na_label] <- gsub("_", " ", PC_df$new_condition[is_na_label])
+
+# 3. Update 'my_colors' names so they match the new descriptive labels
+new_color_names <- label_map[names(my_colors)]
+is_na_color <- is.na(new_color_names)
+new_color_names[is_na_color] <- gsub("_", " ", names(my_colors)[is_na_color])
+names(my_colors) <- new_color_names
+
+# 4. Generate a shape vector dynamically mapped to the new labels
+# Assign 21 (circle) to GCM1 and 23 (diamond) to WT
+shape_lookup <- ifelse(PC_df$KO_WT == "KO", 10, 23)
+my_shapes <- setNames(shape_lookup, PC_df$plot_label)
+my_shapes <- my_shapes[!duplicated(names(my_shapes))] # Ensure the list of shapes is unique
+
+
+gPC = ggplot(PC_df, aes(x = PC1, y = PC2, color = plot_label, fill = plot_label, shape = plot_label)) +
+  geom_point(size = 3, alpha = 0.7, stroke = 0.5) + 
   scale_color_manual(values = my_colors) +
-  scale_shape_manual(values = c("WT" = 16, "KO" = 5)) + 
-  labs(color="KO type") + 
-  xlab(sprintf("PC1 (%.1f%% variance)", pvs[1])) + 
-  ylab(sprintf("PC2 (%.1f%% variance)", pvs[2])) + 
-  ggtitle("All samples") + 
-  guides(
-    color = guide_legend(title = NULL, order = 1),
-    shape = guide_legend(title = NULL, order = 2)
+  scale_fill_manual(values = my_colors) +
+  scale_shape_manual(values = my_shapes) +
+  labs(
+    title = "Perturb NKX2-1 gene",
+    x = sprintf("PC1 (%.1f%% variance)", pvs[1]),
+    y = sprintf("PC2 (%.1f%% variance)", pvs[2]),
+    # Use the same title for all aesthetics to keep the legend merged
+    color = "Condition",
+    fill  = "Condition",
+    shape = "Condition"
   ) +
+  theme_classic() + # Optional: Use to recreate the exact background from your image
   theme(
     legend.margin = margin(0, 0, 0, 0), 
     legend.box.just = "left", 
@@ -176,8 +216,8 @@ gPC = ggplot(PC_df, aes(x = PC1, y = PC2, color=new_condition, shape = KO_WT)) +
 
 print(gPC)
 
-width_px  = 2500
-height_px = round(width_px * (2/4)) 
+width_px  = 1600
+height_px = round(width_px * (3/5)) 
 
 ggsave(
   filename = file.path(personal_path, paste0("/publication/", "UCSF_PCPlot_all_samples.png",sep='')),
@@ -212,18 +252,58 @@ pvs
 PC_df = data.frame(pc_scores)
 PC_df = cbind(PC_df, meta_w)
 
-gPC = ggplot(PC_df, aes(x = PC1, y = PC2, color=new_condition, shape = KO_WT)) +
-  geom_point(size=2.5, alpha=0.7) + 
+# 1. Define the specific name mappings
+label_map <- c(
+  "KO_WT"         = "KO WT",
+  "AID_WT"        = "NW WT",
+  "AID_DMSO"      = "NW OsTIR Gene Tag +DMSO",
+  "AID_NW"        = "NW OsTIR Gene Tag +IAA",
+  "AID_OsTIR1"    = "NW OsTIR",
+  "CRISPRi_AAVS1" = "UCSF CRISPRi AAVS1 +Dox",
+  "CRISPRi_AAVS1_DMSO" = "UCSF CRISPRi AAVS1 +DMSO",
+  "CRISPRi_DMSO"  = "UCSF CRISPRi sgRNA +DMSO",
+  "CRISPRi_UCSF"  = "UCSF CRISPRi sgRNA +Dox",
+  "CRISPRi_WT"    = "UCSF CRISPRi WT",
+  "KO_JAX"        = "JAX KO",
+  "KO_MSK"        = "MSK KO"
+)
+
+# 2. Apply the mapping to create a unified label column
+PC_df$plot_label <- label_map[PC_df$new_condition]
+
+# For any conditions not in the explicit list (e.g., AID_WT, KO_WT), 
+# just replace the underscores with spaces
+is_na_label <- is.na(PC_df$plot_label)
+PC_df$plot_label[is_na_label] <- gsub("_", " ", PC_df$new_condition[is_na_label])
+
+# 3. Update 'my_colors' names so they match the new descriptive labels
+new_color_names <- label_map[names(my_colors)]
+is_na_color <- is.na(new_color_names)
+new_color_names[is_na_color] <- gsub("_", " ", names(my_colors)[is_na_color])
+names(my_colors) <- new_color_names
+
+# 4. Generate a shape vector dynamically mapped to the new labels
+# Assign 21 (circle) to GCM1 and 23 (diamond) to WT
+shape_lookup <- ifelse(PC_df$KO_WT == "KO", 10, 23)
+my_shapes <- setNames(shape_lookup, PC_df$plot_label)
+my_shapes <- my_shapes[!duplicated(names(my_shapes))] # Ensure the list of shapes is unique
+
+
+gPC = ggplot(PC_df, aes(x = PC1, y = PC2, color = plot_label, fill = plot_label, shape = plot_label)) +
+  geom_point(size = 3, alpha = 0.7, stroke = 0.5) + 
   scale_color_manual(values = my_colors) +
-  scale_shape_manual(values = c("WT" = 16, "KO" = 5)) + 
-  labs(color="KO type") + 
-  xlab(sprintf("PC1 (%.1f%% variance)", pvs[1])) + 
-  ylab(sprintf("PC2 (%.1f%% variance)", pvs[2])) + 
-  ggtitle("All samples without MSK") + 
-  guides(
-    color = guide_legend(title = NULL, order = 1),
-    shape = guide_legend(title = NULL, order = 2)
+  scale_fill_manual(values = my_colors) +
+  scale_shape_manual(values = my_shapes) +
+  labs(
+    title = "Perturb NKX2-1 gene, selected samples",
+    x = sprintf("PC1 (%.1f%% variance)", pvs[1]),
+    y = sprintf("PC2 (%.1f%% variance)", pvs[2]),
+    # Use the same title for all aesthetics to keep the legend merged
+    color = "Condition",
+    fill  = "Condition",
+    shape = "Condition"
   ) +
+  theme_classic() + # Optional: Use to recreate the exact background from your image
   theme(
     legend.margin = margin(0, 0, 0, 0), 
     legend.box.just = "left", 
@@ -232,8 +312,8 @@ gPC = ggplot(PC_df, aes(x = PC1, y = PC2, color=new_condition, shape = KO_WT)) +
 
 print(gPC)
 
-width_px  = 2500
-height_px = round(width_px * (2/4))
+width_px  = 1600
+height_px = round(width_px * (3/5)) 
 
 ggsave(
   filename = file.path(personal_path, paste0("/publication/", "UCSF_PCPlot_no_MSK.png",sep='')),

@@ -104,21 +104,17 @@ cts_dat = cts_dat[w2kp, ]
 gene_info = gene_info[w2kp, ]
 ```
 
-### Check read depth vs. gene expression quantile
-
-```{r, fig.width = 4, fig.height=3}
-meta$read_depth = colSums(cts_dat)/1e6
-meta$q75 = apply(cts_dat, 2, quantile, probs = 0.75)
-meta$ko_strategy_clean <- gsub("CTRL_", "", meta$ko_strategy, ignore.case = TRUE)
-my_colors <- c("#E41A1C", "#377EB8", "#4DAF4A", "#984EA3", "#FF7F00", 
-               "#FFFF33", "#A65628", "#F781BF", "#999999", "#66C2A5", "#301934")
-names(my_colors) = unique(meta$ko_strategy_clean)
-meta$run_id_short = meta$run_id
-```
-
 ### PCA for all samples
 
 ```{r}
+meta$read_depth = colSums(cts_dat)/1e6
+meta$q75 = apply(cts_dat, 2, quantile, probs = 0.75)
+meta$ko_strategy_clean <- gsub("CTRL_", "", meta$ko_strategy, ignore.case = TRUE)
+meta$ko_strategy_clean[meta$model_condition == 'UCSF_Parent_DMSO_Rep'] = 'CRISPRi_AAVS1_DMSO'
+my_colors <- paletteer::paletteer_d("ggsci::category20_d3")[1:12]
+names(my_colors) = unique(meta$ko_strategy_clean)
+meta$run_id_short = meta$run_id
+
 # PCA of all samples
 q75 = apply(cts_dat, 1, quantile, probs=0.75)
 cts_dat_n = t(cts_dat[q75 > 0,])
@@ -136,23 +132,59 @@ pvs
 PC_df = data.frame(pc_scores)
 PC_df = cbind(PC_df, meta)
 
-# Note: if you want the plot to USE the new column, change `color=ko_strategy` 
-# to `color=ko_strategy_clean` below. Ensure `my_colors` is updated to match the new names!
-gPC = ggplot(PC_df, aes(x = PC1, y = PC2, shape=ko_gene, color=ko_strategy_clean)) +
-  geom_point(size=2.5, alpha=0.7) + 
+# 1. Define the specific name mappings
+label_map <- c(
+  "KO_WT"         = "KO WT",
+  "AID_WT"        = "NW WT",
+  "AID_DMSO"      = "NW OsTIR Gene Tag +DMSO",
+  "AID_NW"        = "NW OsTIR Gene Tag +IAA",
+  "AID_OsTIR1"    = "NW OsTIR",
+  "CRISPRi_AAVS1" = "UCSF CRISPRi AAVS1 +Dox",
+  "CRISPRi_AAVS1_DMSO" = "UCSF CRISPRi AAVS1 +DMSO",
+  "CRISPRi_DMSO"  = "UCSF CRISPRi sgRNA +DMSO",
+  "CRISPRi_UCSF"  = "UCSF CRISPRi sgRNA +Dox",
+  "CRISPRi_WT"    = "UCSF CRISPRi WT",
+  "KO_JAX"        = "JAX KO",
+  "KO_MSK"        = "MSK KO"
+)
+
+# 2. Apply the mapping to create a unified label column
+PC_df$plot_label <- label_map[PC_df$ko_strategy_clean]
+
+# For any conditions not in the explicit list (e.g., AID_WT, KO_WT), 
+# just replace the underscores with spaces
+is_na_label <- is.na(PC_df$plot_label)
+PC_df$plot_label[is_na_label] <- gsub("_", " ", PC_df$ko_strategy_clean[is_na_label])
+
+# 3. Update 'my_colors' names so they match the new descriptive labels
+new_color_names <- label_map[names(my_colors)]
+is_na_color <- is.na(new_color_names)
+new_color_names[is_na_color] <- gsub("_", " ", names(my_colors)[is_na_color])
+names(my_colors) <- new_color_names
+
+# 4. Generate a shape vector dynamically mapped to the new labels
+# Assign 21 (circle) to GCM1 and 23 (diamond) to WT
+shape_lookup <- ifelse(PC_df$ko_gene == "GCM1", 10, 23)
+my_shapes <- setNames(shape_lookup, PC_df$plot_label)
+my_shapes <- my_shapes[!duplicated(names(my_shapes))] # Ensure the list of shapes is unique
+
+# 5. Build the plot
+# Map color, fill, AND shape all to `plot_label` to force a single, merged legend
+gPC = ggplot(PC_df, aes(x = PC1, y = PC2, color = plot_label, fill = plot_label, shape = plot_label)) +
+  geom_point(size = 3, alpha = 0.7, stroke = 0.5) + 
   scale_color_manual(values = my_colors) +
-  
-  # Replace scale_shape_prism() with explicit manual shapes
-  scale_shape_manual(values = c("GCM1" = 10, "WT" = 15)) + 
-  
-  labs(color="KO type", shape ="KO gene") + 
-  xlab(sprintf("PC1 (%.1f%% variance)", pvs[1])) + 
-  ylab(sprintf("PC2 (%.1f%% variance)", pvs[2])) + 
-  ggtitle("All samples") + 
-  guides(
-    color = guide_legend(title = NULL, order = 1),
-    shape = guide_legend(title = NULL, order = 2)
+  scale_fill_manual(values = my_colors) +
+  scale_shape_manual(values = my_shapes) +
+  labs(
+    title = "Perturb GCM1 gene",
+    x = sprintf("PC1 (%.1f%% variance)", pvs[1]),
+    y = sprintf("PC2 (%.1f%% variance)", pvs[2]),
+    # Use the same title for all aesthetics to keep the legend merged
+    color = "Condition",
+    fill  = "Condition",
+    shape = "Condition"
   ) +
+  theme_classic() + # Optional: Use to recreate the exact background from your image
   theme(
     legend.margin = margin(0, 0, 0, 0), 
     legend.box.just = "left", 
@@ -161,24 +193,33 @@ gPC = ggplot(PC_df, aes(x = PC1, y = PC2, shape=ko_gene, color=ko_strategy_clean
 
 print(gPC)
 
-width_px  = 1920
-height_px = round(width_px * (3/4)) 
+# Save the plot
+width_px  = 1600
+height_px = round(width_px * (3/5)) 
 
 ggsave(
   filename = file.path(personal_path, paste0("/publication/", "JAX_PCPlot_all_samples.png",sep='')),
   plot     = gPC,
-  device   = ragg::agg_png,     # AGG backend, full alpha support
+  device   = ragg::agg_png,     
   bg       = "transparent",
   width    = width_px,
   height   = height_px,
   units    = "px",
-  dpi      = 300,
+  dpi      = 300
 )
 ```
 
 ### PCA for samples we are using
 
 ```{r}
+meta$read_depth = colSums(cts_dat)/1e6
+meta$q75 = apply(cts_dat, 2, quantile, probs = 0.75)
+meta$ko_strategy_clean <- gsub("CTRL_", "", meta$ko_strategy, ignore.case = TRUE)
+meta$ko_strategy_clean[meta$model_condition == 'UCSF_Parent_DMSO_Rep'] = 'CRISPRi_AAVS1_DMSO'
+my_colors <- paletteer::paletteer_d("ggsci::category20_d3")[1:12]
+names(my_colors) = unique(meta$ko_strategy_clean)
+meta$run_id_short = meta$run_id
+
 meta$ko_strategy_clean <- gsub("CTRL_", "", meta$ko_strategy, ignore.case = TRUE)
 model1 = c("UCSF_Pool1_DMSO_Rep", "UCSF_Pool2_DMSO_Rep", "UCSF_Pool1_DOX_Rep", "UCSF_Pool2_DOX_Rep",
            "NW_C20_DMSO_Rep", "NW_C43_DMSO_Rep", "NW_C20_IAA_Rep", "NW_C43_IAA_Rep",
@@ -206,21 +247,58 @@ pvs
 PC_df = data.frame(pc_scores)
 PC_df = cbind(PC_df, meta_m)
 
-gPC = ggplot(PC_df, aes(x = PC1, y = PC2, shape=ko_gene, color=ko_strategy_clean)) +
-  geom_point(size=2.5, alpha=0.7) + 
+# 1. Define the specific name mappings
+label_map <- c(
+  "KO_WT"         = "KO WT",
+  "AID_WT"        = "NW WT",
+  "AID_DMSO"      = "NW OsTIR Gene Tag +DMSO",
+  "AID_NW"        = "NW OsTIR Gene Tag +IAA",
+  "AID_OsTIR1"    = "NW OsTIR",
+  "CRISPRi_AAVS1" = "UCSF CRISPRi AAVS1 +Dox",
+  "CRISPRi_AAVS1_DMSO" = "UCSF CRISPRi AAVS1 +DMSO",
+  "CRISPRi_DMSO"  = "UCSF CRISPRi sgRNA +DMSO",
+  "CRISPRi_UCSF"  = "UCSF CRISPRi sgRNA +Dox",
+  "CRISPRi_WT"    = "UCSF CRISPRi WT",
+  "KO_JAX"        = "JAX KO",
+  "KO_MSK"        = "MSK KO"
+)
+
+# 2. Apply the mapping to create a unified label column
+PC_df$plot_label <- label_map[PC_df$ko_strategy_clean]
+
+# For any conditions not in the explicit list (e.g., AID_WT, KO_WT), 
+# just replace the underscores with spaces
+is_na_label <- is.na(PC_df$plot_label)
+PC_df$plot_label[is_na_label] <- gsub("_", " ", PC_df$ko_strategy_clean[is_na_label])
+
+# 3. Update 'my_colors' names so they match the new descriptive labels
+new_color_names <- label_map[names(my_colors)]
+is_na_color <- is.na(new_color_names)
+new_color_names[is_na_color] <- gsub("_", " ", names(my_colors)[is_na_color])
+names(my_colors) <- new_color_names
+
+# 4. Generate a shape vector dynamically mapped to the new labels
+# Assign 21 (circle) to GCM1 and 23 (diamond) to WT
+shape_lookup <- ifelse(PC_df$ko_gene == "GCM1", 10, 23)
+my_shapes <- setNames(shape_lookup, PC_df$plot_label)
+my_shapes <- my_shapes[!duplicated(names(my_shapes))] # Ensure the list of shapes is unique
+
+
+gPC = ggplot(PC_df, aes(x = PC1, y = PC2, color = plot_label, fill = plot_label, shape = plot_label)) +
+  geom_point(size = 3, alpha = 0.7, stroke = 0.5) + 
   scale_color_manual(values = my_colors) +
-  
-  # Replace scale_shape_prism() with explicit manual shapes
-  scale_shape_manual(values = c("GCM1" = 10, "WT" = 15)) + 
-  
-  labs(color="KO type", shape ="KO gene") + 
-  xlab(sprintf("PC1 (%.1f%% variance)", pvs[1])) + 
-  ylab(sprintf("PC2 (%.1f%% variance)", pvs[2])) + 
-  ggtitle("Selected samples") + 
-  guides(
-    color = guide_legend(title = NULL, order = 1),
-    shape = guide_legend(title = NULL, order = 2)
+  scale_fill_manual(values = my_colors) +
+  scale_shape_manual(values = my_shapes) +
+  labs(
+    title = "Perturb GCM1 gene, selected samples",
+    x = sprintf("PC1 (%.1f%% variance)", pvs[1]),
+    y = sprintf("PC2 (%.1f%% variance)", pvs[2]),
+    # Use the same title for all aesthetics to keep the legend merged
+    color = "Condition",
+    fill  = "Condition",
+    shape = "Condition"
   ) +
+  theme_classic() + # Optional: Use to recreate the exact background from your image
   theme(
     legend.margin = margin(0, 0, 0, 0), 
     legend.box.just = "left", 
@@ -229,8 +307,9 @@ gPC = ggplot(PC_df, aes(x = PC1, y = PC2, shape=ko_gene, color=ko_strategy_clean
 
 print(gPC)
 
-width_px  = 1920
-height_px = round(width_px * (3/4)) 
+
+width_px  = 1600
+height_px = round(width_px * (3/5)) 
 
 ggsave(
   filename = file.path(personal_path, paste0("/publication/", "JAX_PCPlot_selected_samples.png",sep='')),
