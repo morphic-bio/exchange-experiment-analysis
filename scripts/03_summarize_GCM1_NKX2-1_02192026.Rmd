@@ -1,0 +1,1028 @@
+---
+title: "Summarize_JAX_UCSF_02192026"
+output: html_document
+date: "2026-02-19"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(ggplot2)
+library(ggrepel)
+library(ggpubr)
+library(stringr)
+library(MASS)
+library(RColorBrewer)
+library(DESeq2)
+library(viridis)
+library(ggpointdensity)
+library(tidyverse)
+library(data.table)
+library(pheatmap)
+library(ComplexHeatmap)
+library(UpSetR)
+library(readxl)
+library(ggsci)
+library(ggpointdensity)
+library(ggprism)
+library(ragg)
+theme_set(theme_classic(base_size = 15))
+
+personal_path = "/fh/working/sun_w/sshen/MorPhiC"
+path = "/fh/fast/sun_w/MorPhiC/data/MorPhiC_exchange_experiment/"
+dat_path = file.path(path, "DRACC-processed/JAX_exchange_experiment_DRACC_processed_August2025/Tables")
+```
+
+```{r}
+Jax_JAX = as.data.frame(data.table::fread(file.path(personal_path, paste0("/publication/", "GCM1_DE_JAX.csv", sep=''))))
+rownames(Jax_JAX) = Jax_JAX$V1
+Jax_MSK = as.data.frame(data.table::fread(file.path(personal_path, paste0("/publication/", "GCM1_DE_MSK.csv", sep=''))))
+rownames(Jax_MSK) = Jax_MSK$V1
+Jax_UCSF = as.data.frame(data.table::fread(file.path(personal_path, paste0("/publication/", "GCM1_DE_UCSF.csv", sep=''))))
+rownames(Jax_UCSF) = Jax_UCSF$V1
+Jax_NW = as.data.frame(data.table::fread(file.path(personal_path, paste0("/publication/", "GCM1_DE_NW.csv", sep=''))))
+rownames(Jax_NW) = Jax_NW$V1
+Jax_NW_parent = as.data.frame(data.table::fread(file.path(personal_path, paste0("/publication/", "GCM1_DE_NW_parent.csv", sep=''))))
+rownames(Jax_NW_parent) = Jax_NW_parent$V1
+
+
+Ucsf_JAX = as.data.frame(data.table::fread(file.path(personal_path, paste0("/publication/", "NKX2-1_DE_JAX.csv", sep=''))))
+rownames(Ucsf_JAX) = Ucsf_JAX$V1
+Ucsf_MSK = as.data.frame(data.table::fread(file.path(personal_path, paste0("/publication/", "NKX2-1_DE_MSK.csv", sep=''))))
+rownames(Ucsf_MSK) = Ucsf_MSK$V1
+Ucsf_UCSF = as.data.frame(data.table::fread(file.path(personal_path, paste0("/publication/", "NKX2-1_DE_UCSF.csv", sep=''))))
+rownames(Ucsf_UCSF) = Ucsf_UCSF$V1
+Ucsf_NW = as.data.frame(data.table::fread(file.path(personal_path, paste0("/publication/", "NKX2-1_DE_NW.csv", sep=''))))
+rownames(Ucsf_NW) = Ucsf_NW$V1
+Ucsf_NW_dmso = as.data.frame(data.table::fread(file.path(personal_path, paste0("/publication/", "NKX2-1_DE_NW_DMSO.csv", sep=''))))
+rownames(Ucsf_NW_dmso) = Ucsf_NW_dmso$V1
+```
+
+```{r}
+calculate_rank_jaccard <- function(df_A, df_B, pval_thresh = 0.05, n=2000) {
+  
+  # Ensure we are only looking at the common genes between both dataframes
+  common_genes <- intersect(df_A$V1, df_B$V1)
+  df_A <- df_A[df_A$V1 %in% common_genes, ]
+  df_B <- df_B[df_B$V1 %in% common_genes, ]
+  
+  # Step 3: Incorporate the sign into the gene name
+  # If logFC is negative, prepend a "-", otherwise keep the gene name
+  signed_genes_A <- ifelse(df_A$logFC < 0, paste0("-", df_A$V1), df_A$V1)
+  signed_genes_B <- ifelse(df_B$logFC < 0, paste0("-", df_B$V1), df_B$V1)
+  
+  # Step 2: Sort based on significance (smallest adj.P.Val at the top)
+  order_A <- order(df_A$adj.P.Val, decreasing = FALSE)
+  order_B <- order(df_B$adj.P.Val, decreasing = FALSE)
+  
+  ranked_A <- signed_genes_A[order_A]
+  ranked_B <- signed_genes_B[order_B]
+  
+  # Re-order the p-values so we can use them to find 'n'
+  sorted_pval_A <- df_A$adj.P.Val[order_A]
+  sorted_pval_B <- df_B$adj.P.Val[order_B]
+  
+  # Step 5 (part 1): Determine n
+  # Set n to include all genes in A and B with a p-value < 0.05. 
+  # We take the maximum count between the two lists to be inclusive.
+  n_A <- sum(sorted_pval_A < pval_thresh, na.rm = TRUE)
+  n_B <- sum(sorted_pval_B < pval_thresh, na.rm = TRUE)
+  
+  # Safety checks
+  if (n == 0) return(0) 
+  n <- min(n, length(ranked_A)) # Prevent n from exceeding total genes
+  
+  top_A <- ranked_A[1:n]
+  top_B <- ranked_B[1:n]
+  
+  # 2. Find genes that appear in BOTH top n lists
+  common_top <- intersect(top_A, top_B)
+  
+  # 3. Find the rank (index) of these common genes in both lists
+  rank_in_A <- match(common_top, top_A)
+  rank_in_B <- match(common_top, top_B)
+  
+  # 4. A gene enters the intersection at the maximum of its two ranks
+  entry_step <- pmax(rank_in_A, rank_in_B)
+  
+  # 5. Count how many genes enter at each step (from 1 to n)
+  # Using factor() ensures that steps with 0 new genes are still counted as 0
+  entry_counts <- table(factor(entry_step, levels = 1:n))
+  
+  # 6. The intersection size at step i is just the cumulative sum of entries
+  intersect_len_vec <- cumsum(entry_counts)
+  
+  # 7. Calculate union length and Jaccard index for all steps simultaneously
+  i_vec <- 1:n
+  union_len_vec <- (2 * i_vec) - intersect_len_vec
+  ji_vec <- intersect_len_vec / union_len_vec
+  
+  # 8. Sum it all up
+  ji_sum <- sum(ji_vec)
+  
+  return(ji_vec)
+}
+
+# this code is just to make sure the previous vectorized version is correct.
+calculate_rank_jaccard_loop <- function(df_A, df_B, pval_thresh = 0.05, n = 2000) {
+  
+  # --- PRE-PROCESSING (Identical to your original code) ---
+  common_genes <- intersect(df_A$V1, df_B$V1)
+  df_A <- df_A[df_A$V1 %in% common_genes, ]
+  df_B <- df_B[df_B$V1 %in% common_genes, ]
+  
+  signed_genes_A <- ifelse(df_A$logFC < 0, paste0("-", df_A$V1), df_A$V1)
+  signed_genes_B <- ifelse(df_B$logFC < 0, paste0("-", df_B$V1), df_B$V1)
+  
+  order_A <- order(df_A$adj.P.Val, decreasing = FALSE)
+  order_B <- order(df_B$adj.P.Val, decreasing = FALSE)
+  
+  ranked_A <- signed_genes_A[order_A]
+  ranked_B <- signed_genes_B[order_B]
+  
+  sorted_pval_A <- df_A$adj.P.Val[order_A]
+  sorted_pval_B <- df_B$adj.P.Val[order_B]
+  
+  n_A <- sum(sorted_pval_A < pval_thresh, na.rm = TRUE)
+  n_B <- sum(sorted_pval_B < pval_thresh, na.rm = TRUE)
+  
+  if (n == 0) return(0) 
+  n <- min(n, length(ranked_A)) 
+  
+  top_A <- ranked_A[1:n]
+  top_B <- ranked_B[1:n]
+  
+  # --- LOOP-BASED JACCARD CALCULATION ---
+  ji_vec <- numeric(n) # Initialize an empty numeric vector of length n
+  
+  # Iterate from rank 1 to n
+  for (i in 1:n) {
+    # 1. Subset both lists from rank 1 up to rank i
+    subset_A <- top_A[1:i]
+    subset_B <- top_B[1:i]
+    
+    # 2. Find the size of the intersection and the union
+    intersection_len <- length(intersect(subset_A, subset_B))
+    union_len <- length(union(subset_A, subset_B))
+    
+    # 3. Calculate Jaccard index for step i
+    ji_vec[i] <- intersection_len / union_len
+  }
+  
+  return(ji_vec)
+}
+
+```
+
+```{r}
+# Compare Jax vs UCSF for each condition
+jax_JAX_MSK  <- calculate_rank_jaccard(Jax_JAX, Jax_MSK)
+jax_JAX_UCSF  <- calculate_rank_jaccard(Jax_JAX, Jax_UCSF)
+jax_JAX_NW <- calculate_rank_jaccard(Jax_JAX, Jax_NW)
+jax_MSK_UCSF  <- calculate_rank_jaccard(Jax_MSK, Jax_UCSF)
+jax_MSK_NW  <- calculate_rank_jaccard(Jax_MSK, Jax_NW)
+jax_UCSF_NW <- calculate_rank_jaccard(Jax_UCSF, Jax_NW)
+
+# # Print the results
+# cat("Rank-Weighted Jaccard Scores for JAX:\n")
+# cat("JAX vs. MSK: ", jax_JAX_MSK, "\n")
+# cat("JAX vs. UCSF: ", jax_JAX_UCSF, "\n")
+# cat("JAX vs. NW:", jax_JAX_NW, "\n")
+# cat("MSK vs. UCSF:  ", jax_MSK_UCSF, "\n")
+# cat("MSK vs. NW: ", jax_MSK_NW, "\n")
+# cat("UCSF vs. NW: ", jax_UCSF_NW, "\n")
+
+# Compare Jax vs UCSF for each condition
+ucsf_JAX_MSK  <- calculate_rank_jaccard(Ucsf_JAX, Ucsf_MSK)
+ucsf_JAX_UCSF  <- calculate_rank_jaccard(Ucsf_JAX, Ucsf_UCSF)
+ucsf_JAX_NW <- calculate_rank_jaccard(Ucsf_JAX, Ucsf_NW)
+ucsf_MSK_UCSF  <- calculate_rank_jaccard(Ucsf_MSK, Ucsf_UCSF)
+ucsf_MSK_NW  <- calculate_rank_jaccard(Ucsf_MSK, Ucsf_NW)
+ucsf_UCSF_NW <- calculate_rank_jaccard(Ucsf_UCSF, Ucsf_NW)
+
+
+ucsf_NW_JAX  <- calculate_rank_jaccard(Ucsf_NW, Ucsf_JAX)
+ucsf_NW_MSK  <- calculate_rank_jaccard(Ucsf_NW, Ucsf_MSK)
+ucsf_NW_UCSF <- calculate_rank_jaccard(Ucsf_NW, Ucsf_UCSF)
+
+ucsf_NW_dmso_JAX  <- calculate_rank_jaccard(Ucsf_NW_dmso, Ucsf_JAX)
+ucsf_NW_dmso_MSK  <- calculate_rank_jaccard(Ucsf_NW_dmso, Ucsf_MSK)
+ucsf_NW_dmso_UCSF <- calculate_rank_jaccard(Ucsf_NW_dmso, Ucsf_UCSF)
+
+jax_NW_JAX  <- calculate_rank_jaccard(Jax_NW_parent, Jax_JAX)
+jax_NW_MSK  <- calculate_rank_jaccard(Jax_NW_parent, Jax_MSK)
+jax_NW_UCSF <- calculate_rank_jaccard(Jax_NW_parent, Jax_UCSF)
+
+jax_NW_dmso_JAX  <- calculate_rank_jaccard(Jax_NW, Jax_JAX)
+jax_NW_dmso_MSK  <- calculate_rank_jaccard(Jax_NW, Jax_MSK)
+jax_NW_dmso_UCSF <- calculate_rank_jaccard(Jax_NW, Jax_UCSF)
+
+
+# # Print the results
+# cat("Rank-Weighted Jaccard Scores for UCSF:\n")
+# cat("JAX vs. MSK: ", ucsf_JAX_MSK, "\n")
+# cat("JAX vs. UCSF: ", ucsf_JAX_UCSF, "\n")
+# cat("JAX vs. NW:", ucsf_JAX_NW, "\n")
+# cat("MSK vs. UCSF:  ", ucsf_MSK_UCSF, "\n")
+# cat("MSK vs. NW: ", ucsf_MSK_NW, "\n")
+# cat("UCSF vs. NW: ", ucsf_UCSF_NW, "\n")
+
+
+```
+
+```{r}
+n_val <- 2000
+common_genes <- intersect(Jax_JAX$V1, Jax_MSK$V1) # Get the common background
+
+# 1. Prepare the reference data
+df_ref <- Jax_JAX[Jax_JAX$V1 %in% common_genes, ]
+# Sort by p-value to identify the "top" genes
+df_ref <- df_ref[order(df_ref$adj.P.Val, decreasing = FALSE), ]
+# Create a binary outcome: 1 if in the top 500, 0 otherwise
+df_ref$is_top <- ifelse(1:nrow(df_ref) <= n_val, 1, 0)
+
+# 2. Fit the logistic regression model
+# NOTE: Replace 'AveExpr' with your actual column name for expression level
+log_model <- glm(is_top ~ AveExpr, data = df_ref, family = binomial())
+
+# 3. Extract the predicted probabilities to use as sampling weights
+gene_probs <- predict(log_model, type = "response")
+
+# 4. Run the expression-weighted simulation
+n_simulations <- 100
+sim_results <- matrix(NA, nrow = n_simulations, ncol = n_val)
+
+for (sim in 1:n_simulations) {
+  
+  # Sample genes using the logistic regression probabilities as weights
+  # This mimics the biological reality that highly expressed genes are drawn more often
+  genes_A <- sample(df_ref$V1, size = n_val, replace = FALSE, prob = gene_probs)
+  genes_B <- sample(df_ref$V1, size = n_val, replace = FALSE, prob = gene_probs)
+  
+  # Calculate step-by-step intersection
+  intersect_counts <- numeric(n_val)
+  for (i in 1:n_val) {
+    intersect_counts[i] <- length(intersect(genes_A[1:i], genes_B[1:i]))
+  }
+  
+  # Convert to Jaccard
+  union_counts <- (2 * (1:n_val)) - intersect_counts
+  sim_results[sim, ] <- intersect_counts / union_counts
+}
+
+# 5. Average across simulations and build the null dataframe
+expected_jaccard_weighted <- colMeans(sim_results)
+
+null_df <- data.frame(
+  Rank = 1:n_val,
+  Expected = expected_jaccard_weighted
+)
+
+# Load necessary libraries
+library(ggplot2)
+library(tidyr)
+library(gridExtra) # Optional: for putting the two plots side-by-side
+
+# 1. Prepare the JAX data for plotting
+# Create a sequence for the X-axis (Rank 1 to n)
+n_val <- length(jax_JAX_MSK) 
+rank_seq <- 1:n_val
+
+# Combine the JAX vectors into a single dataframe
+jax_df <- data.frame(
+  Rank = rank_seq,
+  `JAX vs MSK`  = as.numeric(jax_JAX_MSK),
+  `JAX vs UCSF` = as.numeric(jax_JAX_UCSF),
+  `JAX vs NW`   = as.numeric(jax_JAX_NW),
+  `MSK vs UCSF` = as.numeric(jax_MSK_UCSF),
+  `MSK vs NW`   = as.numeric(jax_MSK_NW),
+  `UCSF vs NW`  = as.numeric(jax_UCSF_NW),
+  check.names   = FALSE
+)
+
+# Reshape data from "wide" to "long" format for ggplot2
+jax_long <- pivot_longer(jax_df, 
+                         cols = -Rank, 
+                         names_to = "Comparison", 
+                         values_to = "Jaccard_Index")
+
+# Create the JAX Plot with Null Baseline
+plot_jax <- ggplot(jax_long, aes(x = Rank, y = Jaccard_Index, color = Comparison)) +
+  # Add the expected chance dashed line (no CIs)
+  geom_line(data = null_df, aes(x = Rank, y = Expected), 
+            inherit.aes = FALSE, color = "black", linetype = "dashed", size = 0.8) +
+  # Add your actual data lines
+  geom_line(size = 1) + ylim(0, 1) + 
+  theme_minimal() +
+  labs(title = "Jaccard Index (JAX Processing)",
+       subtitle = "Tracking concordance among the Top 500 genes (Dashed line = Expected by chance)",
+       x = "Rank Cutoff (Top i genes)",
+       y = "Jaccard Index") +
+  theme(legend.position = "right",
+        text = element_text(size = 12)) 
+  # ylim(0, 1) removed to allow the plot to auto-scale
+
+
+common_genes <- intersect(Ucsf_JAX$V1, Ucsf_MSK$V1) # Get the common background
+
+# 1. Prepare the reference data
+df_ref <- Ucsf_JAX[Ucsf_JAX$V1 %in% common_genes, ]
+# Sort by p-value to identify the "top" genes
+df_ref <- df_ref[order(df_ref$adj.P.Val, decreasing = FALSE), ]
+# Create a binary outcome: 1 if in the top 500, 0 otherwise
+df_ref$is_top <- ifelse(1:nrow(df_ref) <= n_val, 1, 0)
+
+# 2. Fit the logistic regression model
+# NOTE: Replace 'AveExpr' with your actual column name for expression level
+log_model <- glm(is_top ~ AveExpr, data = df_ref, family = binomial())
+
+# 3. Extract the predicted probabilities to use as sampling weights
+gene_probs <- predict(log_model, type = "response")
+
+# 4. Run the expression-weighted simulation
+n_simulations <- 100
+sim_results <- matrix(NA, nrow = n_simulations, ncol = n_val)
+
+for (sim in 1:n_simulations) {
+  
+  # Sample genes using the logistic regression probabilities as weights
+  # This mimics the biological reality that highly expressed genes are drawn more often
+  genes_A <- sample(df_ref$V1, size = n_val, replace = FALSE, prob = gene_probs)
+  genes_B <- sample(df_ref$V1, size = n_val, replace = FALSE, prob = gene_probs)
+  
+  # Calculate step-by-step intersection
+  intersect_counts <- numeric(n_val)
+  for (i in 1:n_val) {
+    intersect_counts[i] <- length(intersect(genes_A[1:i], genes_B[1:i]))
+  }
+  
+  # Convert to Jaccard
+  union_counts <- (2 * (1:n_val)) - intersect_counts
+  sim_results[sim, ] <- intersect_counts / union_counts
+}
+
+# 5. Average across simulations and build the null dataframe
+expected_jaccard_weighted <- colMeans(sim_results)
+
+null_df <- data.frame(
+  Rank = 1:n_val,
+  Expected = expected_jaccard_weighted
+)
+
+# 2. Prepare the UCSF data for plotting
+ucsf_df <- data.frame(
+  Rank = rank_seq,
+  `JAX vs MSK`  = as.numeric(ucsf_JAX_MSK),
+  `JAX vs UCSF` = as.numeric(ucsf_JAX_UCSF),
+  `JAX vs NW`   = as.numeric(ucsf_JAX_NW),
+  `MSK vs UCSF` = as.numeric(ucsf_MSK_UCSF),
+  `MSK vs NW`   = as.numeric(ucsf_MSK_NW),
+  `UCSF vs NW`  = as.numeric(ucsf_UCSF_NW),
+  check.names   = FALSE
+)
+
+ucsf_long <- pivot_longer(ucsf_df, 
+                          cols = -Rank, 
+                          names_to = "Comparison", 
+                          values_to = "Jaccard_Index")
+
+# Create the UCSF Plot with Null Baseline
+plot_ucsf <- ggplot(ucsf_long, aes(x = Rank, y = Jaccard_Index, color = Comparison)) +
+  # Add the expected chance dashed line (no CIs)
+  geom_line(data = null_df, aes(x = Rank, y = Expected), 
+            inherit.aes = FALSE, color = "black", linetype = "dashed", size = 0.8) +
+  # Add your actual data lines
+  geom_line(size = 1) + ylim(0, 1) + 
+  theme_minimal() +
+  labs(title = "Jaccard Index (UCSF Processing)",
+       subtitle = "Tracking concordance among the Top 500 genes (Dashed line = Expected by chance)",
+       x = "Rank Cutoff (Top i genes)",
+       y = "Jaccard Index") +
+  theme(legend.position = "right",
+        text = element_text(size = 12)) 
+  # ylim(0, 1) removed to allow the plot to auto-scale
+
+# 3. Display the plots
+# Show them one by one:
+print(plot_jax)
+print(plot_ucsf)
+
+# OR show them side-by-side using gridExtra:
+# grid.arrange(plot_jax, plot_ucsf, ncol = 2)
+# ---- Parameters ----
+width_px  <- 1600
+height_px <- 1400
+ggsave(
+  filename = file.path(personal_path, paste0("publication/", "NKX2-1_Jaccard.png")),
+  plot     = plot_ucsf,
+  device   = ragg::agg_png,
+  bg       = "transparent",
+  width    = width_px,
+  height   = height_px,
+  units    = "px",
+  dpi      = 300
+)
+ggsave(
+  filename = file.path(personal_path, paste0("publication/", "GCM1_Jaccard.png")),
+  plot     = plot_jax,
+  device   = ragg::agg_png,
+  bg       = "transparent",
+  width    = width_px,
+  height   = height_px,
+  units    = "px",
+  dpi      = 300
+)
+
+```
+
+```{r}
+# ==============================================================================
+# 1. NW vs. Others (UCSF Processing)
+# ==============================================================================
+
+# Prepare the NW data for plotting
+nw_df <- data.frame(
+  Rank = rank_seq,
+  `NW vs JAX`  = as.numeric(ucsf_NW_JAX),
+  `NW vs MSK`  = as.numeric(ucsf_NW_MSK),
+  `NW vs UCSF` = as.numeric(ucsf_NW_UCSF),
+  check.names  = FALSE
+)
+
+# Reshape from wide to long
+nw_long <- pivot_longer(nw_df, 
+                        cols = -Rank, 
+                        names_to = "Comparison", 
+                        values_to = "Jaccard_Index")
+
+# Create the NW Plot
+plot_nw <- ggplot(nw_long, aes(x = Rank, y = Jaccard_Index, color = Comparison)) +
+  geom_line(data = null_df, aes(x = Rank, y = Expected), 
+            inherit.aes = FALSE, color = "black", linetype = "dashed", size = 0.8) +
+  geom_line(size = 1) + ylim(0, 1) + 
+  theme_minimal() +
+  labs(title = "Jaccard Index: NW Parent vs. Others",
+       subtitle = "UCSF Processing (Dashed line = Expected by chance)",
+       x = "Rank Cutoff (Top i genes)",
+       y = "Jaccard Index") +
+  theme(legend.position = "right",
+        text = element_text(size = 12))
+
+# ==============================================================================
+# 2. NW_parent vs. Others (UCSF Processing)
+# ==============================================================================
+
+# Prepare the NW_parent data for plotting
+nw_dmso_df <- data.frame(
+  Rank = rank_seq,
+  `NW_dmso vs JAX`  = as.numeric(ucsf_NW_dmso_JAX),
+  `NW_dmso vs MSK`  = as.numeric(ucsf_NW_dmso_MSK),
+  `NW_dmso vs UCSF` = as.numeric(ucsf_NW_dmso_UCSF),
+  check.names  = FALSE
+)
+
+# Reshape from wide to long
+nw_dmso_long <- pivot_longer(nw_dmso_df, 
+                               cols = -Rank, 
+                               names_to = "Comparison", 
+                               values_to = "Jaccard_Index")
+
+# Create the NW_parent Plot
+plot_nw_dmso <- ggplot(nw_dmso_long, aes(x = Rank, y = Jaccard_Index, color = Comparison)) +
+  geom_line(data = null_df, aes(x = Rank, y = Expected), 
+            inherit.aes = FALSE, color = "black", linetype = "dashed", size = 0.8) +
+  geom_line(size = 1) + ylim(0, 1) + 
+  theme_minimal() +
+  labs(title = "Jaccard Index: NW DMSO vs. Others",
+       subtitle = "UCSF Processing (Dashed line = Expected by chance)",
+       x = "Rank Cutoff (Top i genes)",
+       y = "Jaccard Index") +
+  theme(legend.position = "right",
+        text = element_text(size = 12))
+
+# ==============================================================================
+# 3. Display the Plots
+# ==============================================================================
+
+print(plot_nw)
+print(plot_nw_dmso)
+# ---- Parameters ----
+width_px  <- 1600
+height_px <- 1400
+ggsave(
+  filename = file.path(personal_path, paste0("publication/", "NKX2-1_NW_parent_Jaccard.png")),
+  plot     = plot_nw,
+  device   = ragg::agg_png,
+  bg       = "transparent",
+  width    = width_px,
+  height   = height_px,
+  units    = "px",
+  dpi      = 300
+)
+ggsave(
+  filename = file.path(personal_path, paste0("publication/", "GCM1_NW_dmso_Jaccard.png")),
+  plot     = plot_nw_dmso,
+  device   = ragg::agg_png,
+  bg       = "transparent",
+  width    = width_px,
+  height   = height_px,
+  units    = "px",
+  dpi      = 300
+)
+
+# Or, if you want to view them side-by-side:
+# grid.arrange(plot_nw, plot_nw_parent, ncol = 2)
+```
+
+```{r}
+# ==============================================================================
+# 1. NW vs. Others (UCSF Processing)
+# ==============================================================================
+
+# Prepare the NW data for plotting
+nw_df <- data.frame(
+  Rank = rank_seq,
+  `NW vs JAX`  = as.numeric(jax_NW_JAX),
+  `NW vs MSK`  = as.numeric(jax_NW_MSK),
+  `NW vs UCSF` = as.numeric(jax_NW_UCSF),
+  check.names  = FALSE
+)
+
+# Reshape from wide to long
+nw_long <- pivot_longer(nw_df, 
+                        cols = -Rank, 
+                        names_to = "Comparison", 
+                        values_to = "Jaccard_Index")
+
+# Create the NW Plot
+plot_nw <- ggplot(nw_long, aes(x = Rank, y = Jaccard_Index, color = Comparison)) +
+  geom_line(data = null_df, aes(x = Rank, y = Expected), 
+            inherit.aes = FALSE, color = "black", linetype = "dashed", size = 0.8) +
+  geom_line(size = 1) + ylim(0, 1) + 
+  theme_minimal() +
+  labs(title = "Jaccard Index: NW Parent vs. Others",
+       subtitle = "JAX Processing (Dashed line = Expected by chance)",
+       x = "Rank Cutoff (Top i genes)",
+       y = "Jaccard Index") +
+  theme(legend.position = "right",
+        text = element_text(size = 12))
+
+# ==============================================================================
+# 2. NW_parent vs. Others (UCSF Processing)
+# ==============================================================================
+
+# Prepare the NW_parent data for plotting
+nw_dmso_df <- data.frame(
+  Rank = rank_seq,
+  `NW_dmso vs JAX`  = as.numeric(jax_NW_dmso_JAX),
+  `NW_dmso vs MSK`  = as.numeric(jax_NW_dmso_MSK),
+  `NW_dmso vs UCSF` = as.numeric(jax_NW_dmso_UCSF),
+  check.names  = FALSE
+)
+
+# Reshape from wide to long
+nw_dmso_long <- pivot_longer(nw_dmso_df, 
+                               cols = -Rank, 
+                               names_to = "Comparison", 
+                               values_to = "Jaccard_Index")
+
+# Create the NW_parent Plot
+plot_nw_dmso <- ggplot(nw_dmso_long, aes(x = Rank, y = Jaccard_Index, color = Comparison)) +
+  geom_line(data = null_df, aes(x = Rank, y = Expected), 
+            inherit.aes = FALSE, color = "black", linetype = "dashed", size = 0.8) +
+  geom_line(size = 1) + ylim(0, 1) + 
+  theme_minimal() +
+  labs(title = "Jaccard Index: NW DMSO vs. Others",
+       subtitle = "JAX Processing (Dashed line = Expected by chance)",
+       x = "Rank Cutoff (Top i genes)",
+       y = "Jaccard Index") +
+  theme(legend.position = "right",
+        text = element_text(size = 12))
+
+# ==============================================================================
+# 3. Display the Plots
+# ==============================================================================
+
+print(plot_nw)
+print(plot_nw_dmso)
+# ---- Parameters ----
+width_px  <- 1600
+height_px <- 1400
+ggsave(
+  filename = file.path(personal_path, paste0("publication/", "GCM1_NW_parent_Jaccard.png")),
+  plot     = plot_nw,
+  device   = ragg::agg_png,
+  bg       = "transparent",
+  width    = width_px,
+  height   = height_px,
+  units    = "px",
+  dpi      = 300
+)
+ggsave(
+  filename = file.path(personal_path, paste0("publication/", "GCM1_NW_dmso_Jaccard.png")),
+  plot     = plot_nw_dmso,
+  device   = ragg::agg_png,
+  bg       = "transparent",
+  width    = width_px,
+  height   = height_px,
+  units    = "px",
+  dpi      = 300
+)
+
+# Or, if you want to view them side-by-side:
+# grid.arrange(plot_nw, plot_nw_parent, ncol = 2)
+```
+
+```{r}
+# Load necessary libraries
+library(ggplot2)
+library(patchwork) # for arranging plots side-by-side
+
+# 1. Keep your existing functions
+score_p_uniform <- function(src_genes, tt_target) {
+  idx <- intersect(src_genes, rownames(tt_target))
+  if (length(idx) == 0) return(NA_real_)
+  p <- tt_target[idx, "P.Value"]           
+  p <- p[is.finite(p)]
+  if (length(p) == 0) return(NA_real_)
+  1 - 2 * mean(p > 0.5)
+}
+
+compare_top_n_dpc <- function(df_list, n = 500) {
+  labs <- names(df_list)
+  prop_mat <- matrix(NA_real_, nrow = length(labs), ncol = length(labs), dimnames = list(labs, labs))
+  
+  for (i in labs) {
+    for (j in labs) {
+      if (i == j) {
+        prop_mat[i, j] <- 1  
+      } else {
+        src_df <- df_list[[i]]
+        top_n_genes <- rownames(src_df)[order(src_df$P.Value, decreasing = FALSE)][1:n]
+        prop_mat[i, j] <- score_p_uniform(top_n_genes, df_list[[j]])
+      }
+    }
+  }
+  return(prop_mat)
+}
+
+# 2. Group data by pipeline
+jax_pipeline_list <- list(JAX = Jax_JAX, MSK = Jax_MSK, UCSF = Jax_UCSF, NW = Jax_NW)
+ucsf_pipeline_list <- list(JAX = Ucsf_JAX, MSK = Ucsf_MSK, UCSF = Ucsf_UCSF, NW = Ucsf_NW)
+
+# 3. Define a helper function to create a clean ggplot heatmap
+create_heatmap <- function(mat, title) {
+  # Convert the matrix into a data frame for ggplot
+  df <- as.data.frame(as.table(mat))
+  colnames(df) <- c("Source", "Target", "Score")
+  
+  # Reverse the Source factor levels so the matrix plots top-to-bottom
+  df$Source <- factor(df$Source, levels = rev(unique(df$Source)))
+  
+  ggplot(df, aes(x = Target, y = Source, fill = Score)) +
+    geom_tile(color = "white", size = 0.5) +
+    # Add text labels (rounded to 2 decimal places)
+    geom_text(aes(label = sprintf("%.2f", Score)), color = "black", size = 3.5) +
+    # Score logic: theoretical max is 1, theoretical min is -1, null is 0
+    scale_fill_gradient2(low = "dodgerblue", mid = "white", high = "firebrick", 
+                         midpoint = 0, limits = c(-1, 1), na.value = "grey90",
+                         name = "Score") +
+    theme_minimal() +
+    labs(title = title, x = "Target", y = "Source (Top N)") +
+    theme(
+      axis.text.x = element_text(angle = 45, hjust = 1, face = "bold"),
+      axis.text.y = element_text(face = "bold"),
+      panel.grid = element_blank(),
+      plot.title = element_text(size = 11, face = "bold", hjust = 0.5)
+    )
+}
+
+# 4. Generate the matrices and store the plots
+n_values <- c(100, 300, 500)
+jax_plots <- list()
+ucsf_plots <- list()
+
+for (n in n_values) {
+  # Calculate matrices
+  mat_jax  <- compare_top_n_dpc(jax_pipeline_list, n = n)
+  mat_ucsf <- compare_top_n_dpc(ucsf_pipeline_list, n = n)
+  
+  # Create plots
+  jax_plots[[as.character(n)]]  <- create_heatmap(mat_jax, paste("JAX: Top", n))
+  ucsf_plots[[as.character(n)]] <- create_heatmap(mat_ucsf, paste("UCSF: Top", n))
+}
+
+# 5. Display the plots side-by-side using the 'patchwork' package
+# Use the "+" operator to stick them next to each other
+jax_combined <- jax_plots[["100"]] + jax_plots[["300"]] + jax_plots[["500"]] + 
+                plot_layout(guides = "collect") + 
+                plot_annotation(title = "JAX")
+
+ucsf_combined <- ucsf_plots[["100"]] + ucsf_plots[["300"]] + ucsf_plots[["500"]] + 
+                 plot_layout(guides = "collect") + 
+                 plot_annotation(title = "UCSF")
+
+# Print them to your viewer
+print(jax_combined)
+print(ucsf_combined)
+```
+
+```{r}
+library(ggplot2)
+
+# 1. Helper function to extract target p-values for the top N source genes
+get_target_pvals <- function(src_df, target_df, n = 500) {
+  # Get the top N genes from the source by sorting P.Value
+  top_genes <- rownames(src_df)[order(src_df$P.Value, decreasing = FALSE)][1:n]
+  
+  # Find which of those genes exist in the target dataset
+  idx <- intersect(top_genes, rownames(target_df))
+  
+  # Extract the nominal p-values from the target dataset
+  pvals <- target_df[idx, "P.Value"]
+  pvals <- pvals[is.finite(pvals)] # Clean out any NAs
+  
+  return(pvals)
+}
+
+# 2. Extract the p-values for your 6 specific pairs (Assuming the Jax pipeline)
+pval_data <- list(
+  "MSK -> JAX"  = get_target_pvals(Jax_MSK, Jax_JAX, n = 500),
+  "MSK -> UCSF" = get_target_pvals(Jax_MSK, Jax_UCSF, n = 500),
+  "MSK -> NW"   = get_target_pvals(Jax_MSK, Jax_NW, n = 500),
+  "JAX -> MSK"  = get_target_pvals(Jax_JAX, Jax_MSK, n = 500),
+  "JAX -> UCSF" = get_target_pvals(Jax_JAX, Jax_UCSF, n = 500),
+  "JAX -> NW"   = get_target_pvals(Jax_JAX, Jax_NW, n = 500)
+)
+
+# 3. Combine them into a single data frame for ggplot
+# This loops through the list and binds them into a format ggplot loves
+plot_df <- do.call(rbind, lapply(names(pval_data), function(pair_name) {
+  data.frame(
+    Pair = pair_name,
+    P_Value = pval_data[[pair_name]]
+  )
+}))
+
+# Ensure the plots appear in the specific order you requested
+plot_df$Pair <- factor(plot_df$Pair, levels = c(
+  "MSK -> JAX", "MSK -> UCSF", "MSK -> NW", 
+  "JAX -> MSK", "JAX -> UCSF", "JAX -> NW"
+))
+
+# 4. Plot the histograms
+ggplot(plot_df, aes(x = P_Value)) +
+  # Use 20 bins (breaks every 0.05) so the 0.5 threshold from your heuristic is obvious
+  geom_histogram(breaks = seq(0, 1, by = 0.05), fill = "dodgerblue", color = "black", alpha = 0.8) +
+  # facet_wrap creates the 2x3 grid of individual plots
+  facet_wrap(~ Pair, ncol = 3) +
+  theme_minimal() +
+  labs(
+    title = "Target P-Value Distributions of Top 500 Source Genes using JAX data",
+    x = "Target Nominal P-Value",
+    y = "Gene Count"
+  ) +
+  theme(
+    strip.text = element_text(size = 11, face = "bold"),
+    panel.grid.minor = element_blank()
+  )
+
+pval_data <- list(
+  "MSK -> JAX"  = get_target_pvals(Ucsf_MSK, Ucsf_JAX, n = 500),
+  "MSK -> UCSF" = get_target_pvals(Ucsf_MSK, Ucsf_UCSF, n = 500),
+  "MSK -> NW"   = get_target_pvals(Ucsf_MSK, Ucsf_NW, n = 500),
+  "JAX -> MSK"  = get_target_pvals(Ucsf_JAX, Ucsf_MSK, n = 500),
+  "JAX -> UCSF" = get_target_pvals(Ucsf_JAX, Ucsf_UCSF, n = 500),
+  "JAX -> NW"   = get_target_pvals(Ucsf_JAX, Ucsf_NW, n = 500)
+)
+
+# 3. Combine them into a single data frame for ggplot
+# This loops through the list and binds them into a format ggplot loves
+plot_df <- do.call(rbind, lapply(names(pval_data), function(pair_name) {
+  data.frame(
+    Pair = pair_name,
+    P_Value = pval_data[[pair_name]]
+  )
+}))
+
+# Ensure the plots appear in the specific order you requested
+plot_df$Pair <- factor(plot_df$Pair, levels = c(
+  "MSK -> JAX", "MSK -> UCSF", "MSK -> NW", 
+  "JAX -> MSK", "JAX -> UCSF", "JAX -> NW"
+))
+
+# 4. Plot the histograms
+ggplot(plot_df, aes(x = P_Value)) +
+  # Use 20 bins (breaks every 0.05) so the 0.5 threshold from your heuristic is obvious
+  geom_histogram(breaks = seq(0, 1, by = 0.05), fill = "dodgerblue", color = "black", alpha = 0.8) +
+  # facet_wrap creates the 2x3 grid of individual plots
+  facet_wrap(~ Pair, ncol = 3) +
+  theme_minimal() +
+  labs(
+    title = "Target P-Value Distributions of Top 500 Source Genes using UCSF data",
+    x = "Target Nominal P-Value",
+    y = "Gene Count"
+  ) +
+  theme(
+    strip.text = element_text(size = 11, face = "bold"),
+    panel.grid.minor = element_blank()
+  )
+```
+
+```{r}
+library(ggplot2)
+
+# 1. Extract the p-values using your UCSF pipeline as the source 
+# and the Jax pipeline as the target
+neg_pvals <- get_target_pvals(src_df = Ucsf_JAX, target_df = Jax_JAX, n = 500)
+
+# 2. Put it into a simple data frame
+neg_df <- data.frame(
+  Pair = "Ucsf_JAX -> Jax_JAX",
+  P_Value = neg_pvals
+)
+
+# 3. Generate the single histogram
+ggplot(neg_df, aes(x = P_Value)) +
+  # Using a different color (darkorange) to distinguish it from the previous set
+  geom_histogram(breaks = seq(0, 1, by = 0.05), fill = "darkorange", color = "black", alpha = 0.8) +
+  theme_minimal() +
+  labs(
+    title = "Cross-Pipeline Comparison: Ucsf_JAX to Jax_JAX",
+    x = "Jax_JAX Nominal P-Value",
+    y = "Gene Count"
+  ) +
+  theme(
+    plot.title = element_text(size = 13, face = "bold"),
+    panel.grid.minor = element_blank()
+  )
+```
+
+```{r}
+# ==============================================================================
+# 1. HELPER FUNCTIONS & PARAMETERS
+# ==============================================================================
+
+# Set n (Change this to 500 later to answer the question about top 500 genes)
+n = 2000
+
+# Helper function to calculate Odds (sig / non-sig) from a vector of p-values
+calculate_odds <- function(pvals, thresh = 0.05) {
+  sig <- sum(pvals < thresh, na.rm = TRUE)
+  ns  <- sum(pvals >= thresh, na.rm = TRUE)
+  if (ns == 0) return(NA) # Prevent division by zero
+  return(sig / ns)
+}
+
+# Helper function to extract target p-values for the top N source genes
+get_target_pvals <- function(src_df, target_df, n = 500) {
+  # Get the top N genes from the source by sorting P.Value
+  top_genes <- rownames(src_df)[order(src_df$P.Value, decreasing = FALSE)][1:n]
+  
+  # Find which of those genes exist in the target dataset
+  idx <- intersect(top_genes, rownames(target_df))
+  
+  # Extract the nominal p-values from the target dataset
+  pvals <- target_df[idx, "P.Value"]
+  pvals <- pvals[is.finite(pvals)] # Clean out any NAs
+  
+  return(pvals)
+}
+
+# Helper function to calculate the proportion of nulls
+# Simple estimate: 2 * (proportion of p-values > 0.5)
+calculate_null_prop <- function(pvals) {
+  if(length(pvals) == 0) return(NA)
+  null_prop <- 2 * mean(pvals > 0.5, na.rm = TRUE)
+  return(min(null_prop, 1)) # cap at 1 (100% null)
+}
+
+
+# ==============================================================================
+# 2. JAX DATA PROCESSING
+# ==============================================================================
+
+# Extract the 6 lists of p-values for JAX
+pval_data_jax <- list(
+  "MSK -> JAX"  = get_target_pvals(Jax_MSK, Jax_JAX, n = n),
+  "MSK -> UCSF" = get_target_pvals(Jax_MSK, Jax_UCSF, n = n),
+  "MSK -> NW"   = get_target_pvals(Jax_MSK, Jax_NW, n = n),
+  "JAX -> MSK"  = get_target_pvals(Jax_JAX, Jax_MSK, n = n),
+  "JAX -> UCSF" = get_target_pvals(Jax_JAX, Jax_UCSF, n = n),
+  "JAX -> NW"   = get_target_pvals(Jax_JAX, Jax_NW, n = n)
+)
+
+# Calculate SUBSET Odds (Top n genes)
+odds_msk_jax  <- calculate_odds(pval_data_jax[["MSK -> JAX"]])
+odds_msk_ucsf <- calculate_odds(pval_data_jax[["MSK -> UCSF"]])
+odds_msk_nw   <- calculate_odds(pval_data_jax[["MSK -> NW"]])
+odds_jax_msk  <- calculate_odds(pval_data_jax[["JAX -> MSK"]])
+odds_jax_ucsf <- calculate_odds(pval_data_jax[["JAX -> UCSF"]])
+odds_jax_nw   <- calculate_odds(pval_data_jax[["JAX -> NW"]])
+
+# Calculate BACKGROUND Odds (All genes in the target dataset)
+bg_odds_jax_target_jax  <- calculate_odds(Jax_JAX$P.Value)
+bg_odds_jax_target_ucsf <- calculate_odds(Jax_UCSF$P.Value)
+bg_odds_jax_target_nw   <- calculate_odds(Jax_NW$P.Value)
+bg_odds_jax_target_msk  <- calculate_odds(Jax_MSK$P.Value)
+
+# Calculate SUBSET Proportion of Nulls
+null_prop_msk_jax  <- calculate_null_prop(pval_data_jax[["MSK -> JAX"]])
+null_prop_msk_ucsf <- calculate_null_prop(pval_data_jax[["MSK -> UCSF"]])
+null_prop_msk_nw   <- calculate_null_prop(pval_data_jax[["MSK -> NW"]])
+null_prop_jax_msk  <- calculate_null_prop(pval_data_jax[["JAX -> MSK"]])
+null_prop_jax_ucsf <- calculate_null_prop(pval_data_jax[["JAX -> UCSF"]])
+null_prop_jax_nw   <- calculate_null_prop(pval_data_jax[["JAX -> NW"]])
+
+# Calculate BACKGROUND Proportion of Nulls (All genes)
+bg_null_prop_jax_target_jax  <- calculate_null_prop(Jax_JAX$P.Value)
+bg_null_prop_jax_target_ucsf <- calculate_null_prop(Jax_UCSF$P.Value)
+bg_null_prop_jax_target_nw   <- calculate_null_prop(Jax_NW$P.Value)
+bg_null_prop_jax_target_msk  <- calculate_null_prop(Jax_MSK$P.Value)
+
+# Create the Final Table for JAX
+results_table_jax <- data.frame(
+  Comparison = c("JAX -> UCSF", "JAX -> NW", "JAX -> MSK", "MSK -> UCSF", "MSK -> NW", "MSK -> JAX"),
+  Null_Proportion_Subset = c(null_prop_jax_ucsf, null_prop_jax_nw, null_prop_jax_msk, null_prop_msk_ucsf, null_prop_msk_nw, null_prop_msk_jax),
+  Null_Proportion_Background = c(bg_null_prop_jax_target_ucsf, bg_null_prop_jax_target_nw, bg_null_prop_jax_target_msk, bg_null_prop_jax_target_ucsf, bg_null_prop_jax_target_nw, bg_null_prop_jax_target_jax),
+  Subset_Odds = c(odds_jax_ucsf, odds_jax_nw, odds_jax_msk, odds_msk_ucsf, odds_msk_nw, odds_msk_jax),
+  Background_Odds = c(bg_odds_jax_target_ucsf, bg_odds_jax_target_nw, bg_odds_jax_target_msk, bg_odds_jax_target_ucsf, bg_odds_jax_target_nw, bg_odds_jax_target_jax),
+  Odds_Ratio_Subset_vs_Background = c(
+    odds_jax_ucsf / bg_odds_jax_target_ucsf,
+    odds_jax_nw   / bg_odds_jax_target_nw,
+    odds_jax_msk  / bg_odds_jax_target_msk,
+    odds_msk_ucsf / bg_odds_jax_target_ucsf,
+    odds_msk_nw   / bg_odds_jax_target_nw,
+    odds_msk_jax  / bg_odds_jax_target_jax
+  )
+)
+
+print("=== METRICS FOR JAX DATA ===")
+print(results_table_jax)
+
+
+# ==============================================================================
+# 3. UCSF DATA PROCESSING
+# ==============================================================================
+
+# Extract the 6 lists of p-values for UCSF
+pval_data_ucsf <- list(
+  "MSK -> JAX"  = get_target_pvals(Ucsf_MSK, Ucsf_JAX, n = n),
+  "MSK -> UCSF" = get_target_pvals(Ucsf_MSK, Ucsf_UCSF, n = n),
+  "MSK -> NW"   = get_target_pvals(Ucsf_MSK, Ucsf_NW, n = n),
+  "JAX -> MSK"  = get_target_pvals(Ucsf_JAX, Ucsf_MSK, n = n),
+  "JAX -> UCSF" = get_target_pvals(Ucsf_JAX, Ucsf_UCSF, n = n),
+  "JAX -> NW"   = get_target_pvals(Ucsf_JAX, Ucsf_NW, n = n)
+)
+
+# Calculate SUBSET Odds (Renamed variables to avoid overwriting JAX)
+odds_msk_jax_ucsf  <- calculate_odds(pval_data_ucsf[["MSK -> JAX"]])
+odds_msk_ucsf_ucsf <- calculate_odds(pval_data_ucsf[["MSK -> UCSF"]])
+odds_msk_nw_ucsf   <- calculate_odds(pval_data_ucsf[["MSK -> NW"]])
+odds_jax_msk_ucsf  <- calculate_odds(pval_data_ucsf[["JAX -> MSK"]])
+odds_jax_ucsf_ucsf <- calculate_odds(pval_data_ucsf[["JAX -> UCSF"]])
+odds_jax_nw_ucsf   <- calculate_odds(pval_data_ucsf[["JAX -> NW"]])
+
+# Calculate BACKGROUND Odds (All genes in the target dataset)
+bg_odds_ucsf_target_jax  <- calculate_odds(Ucsf_JAX$P.Value)
+bg_odds_ucsf_target_ucsf <- calculate_odds(Ucsf_UCSF$P.Value)
+bg_odds_ucsf_target_nw   <- calculate_odds(Ucsf_NW$P.Value)
+bg_odds_ucsf_target_msk  <- calculate_odds(Ucsf_MSK$P.Value)
+
+# Calculate SUBSET Proportion of Nulls
+null_prop_msk_jax_ucsf  <- calculate_null_prop(pval_data_ucsf[["MSK -> JAX"]])
+null_prop_msk_ucsf_ucsf <- calculate_null_prop(pval_data_ucsf[["MSK -> UCSF"]])
+null_prop_msk_nw_ucsf   <- calculate_null_prop(pval_data_ucsf[["MSK -> NW"]])
+null_prop_jax_msk_ucsf  <- calculate_null_prop(pval_data_ucsf[["JAX -> MSK"]])
+null_prop_jax_ucsf_ucsf <- calculate_null_prop(pval_data_ucsf[["JAX -> UCSF"]])
+null_prop_jax_nw_ucsf   <- calculate_null_prop(pval_data_ucsf[["JAX -> NW"]])
+
+# Calculate BACKGROUND Proportion of Nulls 
+bg_null_prop_ucsf_target_jax  <- calculate_null_prop(Ucsf_JAX$P.Value)
+bg_null_prop_ucsf_target_ucsf <- calculate_null_prop(Ucsf_UCSF$P.Value)
+bg_null_prop_ucsf_target_nw   <- calculate_null_prop(Ucsf_NW$P.Value)
+bg_null_prop_ucsf_target_msk  <- calculate_null_prop(Ucsf_MSK$P.Value)
+
+# Create the Final Table for UCSF
+results_table_ucsf <- data.frame(
+  Comparison = c("JAX -> UCSF", "JAX -> NW", "JAX -> MSK", "MSK -> UCSF", "MSK -> NW", "MSK -> JAX"),
+  Null_Proportion_Subset = c(null_prop_jax_ucsf_ucsf, null_prop_jax_nw_ucsf, null_prop_jax_msk_ucsf, null_prop_msk_ucsf_ucsf, null_prop_msk_nw_ucsf, null_prop_msk_jax_ucsf),
+  Null_Proportion_Background = c(bg_null_prop_ucsf_target_ucsf, bg_null_prop_ucsf_target_nw, bg_null_prop_ucsf_target_msk, bg_null_prop_ucsf_target_ucsf, bg_null_prop_ucsf_target_nw, bg_null_prop_ucsf_target_jax),
+  Subset_Odds = c(odds_jax_ucsf_ucsf, odds_jax_nw_ucsf, odds_jax_msk_ucsf, odds_msk_ucsf_ucsf, odds_msk_nw_ucsf, odds_msk_jax_ucsf),
+  Background_Odds = c(bg_odds_ucsf_target_ucsf, bg_odds_ucsf_target_nw, bg_odds_ucsf_target_msk, bg_odds_ucsf_target_ucsf, bg_odds_ucsf_target_nw, bg_odds_ucsf_target_jax),
+  Odds_Ratio_Subset_vs_Background = c(
+    odds_jax_ucsf_ucsf / bg_odds_ucsf_target_ucsf,
+    odds_jax_nw_ucsf   / bg_odds_ucsf_target_nw,
+    odds_jax_msk_ucsf  / bg_odds_ucsf_target_msk,
+    odds_msk_ucsf_ucsf / bg_odds_ucsf_target_ucsf,
+    odds_msk_nw_ucsf   / bg_odds_ucsf_target_nw,
+    odds_msk_jax_ucsf  / bg_odds_ucsf_target_jax
+  )
+)
+
+print("=== METRICS FOR UCSF DATA ===")
+print(results_table_ucsf)
+```
+
